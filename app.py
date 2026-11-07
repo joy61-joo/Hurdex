@@ -2,9 +2,12 @@ import base64
 import datetime
 import hashlib
 import json
+import os
 import random
 import sqlite3
 import smtplib
+import subprocess
+import tempfile
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import pandas as pd
@@ -79,11 +82,11 @@ st.markdown("""
 COACH_SECRET_CODE = "09290808"
 DB_NAME = "hurdle_analysis.db"
 
-# SMTP 發信伺服器設定 (請在此設定您的發信 Email 帳密，例如 Gmail 的應用程式密碼)
+# SMTP 發信伺服器設定
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
-SENDER_EMAIL = "your_system_email@gmail.com"   # 請替換為您的發信信箱
-SENDER_PASSWORD = "your_app_password"          # 請替換為您的 SMTP 應用程式密碼
+SENDER_EMAIL = "your_system_email@gmail.com"
+SENDER_PASSWORD = "your_app_password"
 
 def init_db():
     conn = sqlite3.connect(DB_NAME)
@@ -98,7 +101,6 @@ def init_db():
         )
     ''')
     
-    # 自動升級舊資料庫：檢查並自動補齊缺少的 email 欄位
     c.execute("PRAGMA table_info(users)")
     columns = [column[1] for column in c.fetchall()]
     if 'email' not in columns:
@@ -141,6 +143,44 @@ def init_db():
     conn.commit()
     conn.close()
 
+# -------------------- 【伺服器端手機影片自動轉碼處理】 --------------------
+def process_and_convert_video(uploaded_file):
+    """將 iPhone (.MOV / H.265) 或手機影片自動透過 FFmpeg 轉碼為網頁通用 H.264 MP4"""
+    if uploaded_file is None:
+        return None, None
+    suffix = os.path.splitext(uploaded_file.name)[1]
+    if not suffix:
+        suffix = ".mp4"
+        
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_in:
+        tmp_in.write(uploaded_file.getvalue())
+        in_path = tmp_in.name
+
+    out_path = in_path + "_converted.mp4"
+
+    cmd = [
+        "ffmpeg", "-y", "-i", in_path,
+        "-vcodec", "libx264", "-acodec", "aac",
+        "-crf", "25", "-preset", "ultrafast",
+        out_path
+    ]
+    
+    try:
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        if os.path.exists(out_path):
+            with open(out_path, "rb") as f:
+                converted_bytes = f.read()
+            if os.path.exists(in_path): os.remove(in_path)
+            if os.path.exists(out_path): os.remove(out_path)
+            return converted_bytes, "video/mp4"
+    except Exception:
+        pass
+        
+    if os.path.exists(in_path): os.remove(in_path)
+    if os.path.exists(out_path): os.remove(out_path)
+    mime = uploaded_file.type if uploaded_file.type else "video/mp4"
+    return uploaded_file.getvalue(), mime
+
 def hash_password(password):
     return hashlib.sha256(password.encode('utf-8')).hexdigest()
 
@@ -152,7 +192,6 @@ def register_user(username, password, role, email):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     
-    # 檢查是否有相同帳號名稱
     c.execute("SELECT username FROM users WHERE username = ?", (username,))
     if c.fetchone():
         conn.close()
@@ -537,8 +576,8 @@ elif page == "角度分析 Angle Analysis":
     uploaded_file = st.file_uploader("上傳動作影片 Upload Video MP4 MOV", type=["mp4", "mov", "avi"])
 
     if uploaded_file is not None:
-        bytes_single = uploaded_file.getvalue()
-        mime_single = uploaded_file.type if uploaded_file.type else "video/mp4"
+        with st.spinner("正在優化手機影片格式 (H.264 MP4)..."):
+            bytes_single, mime_single = process_and_convert_video(uploaded_file)
         b64_single = base64.b64encode(bytes_single).decode("utf-8")
 
         tab_play, tab_measure, tab_hurdle_timer = st.tabs([
@@ -548,7 +587,7 @@ elif page == "角度分析 Angle Analysis":
         ])
 
         with tab_play:
-            st.video(uploaded_file)
+            st.video(bytes_single)
 
         with tab_measure:
             measure_html_template = """<!DOCTYPE html>
@@ -1226,8 +1265,8 @@ elif page == "殘影軌跡 Ghosting Track":
     uploaded_strobe_file = st.file_uploader("上傳動作影片 Upload Video MP4 MOV", type=["mp4", "mov", "avi"], key="strobe_uploader")
 
     if uploaded_strobe_file is not None:
-        bytes_strobe = uploaded_strobe_file.getvalue()
-        mime_strobe = uploaded_strobe_file.type if uploaded_strobe_file.type else "video/mp4"
+        with st.spinner("正在優化手機影片格式 (H.264 MP4)..."):
+            bytes_strobe, mime_strobe = process_and_convert_video(uploaded_strobe_file)
         b64_strobe = base64.b64encode(bytes_strobe).decode("utf-8")
 
         strobe_html_template = """<!DOCTYPE html>
@@ -1483,10 +1522,11 @@ elif page == "雙影同步 Dual Video Sync":
         file_b = st.file_uploader("上傳影片二 Upload Video 2", type=["mp4", "mov", "avi"], key="file_b")
 
     if file_a and file_b:
-        b64_a = base64.b64encode(file_a.getvalue()).decode("utf-8")
-        b64_b = base64.b64encode(file_b.getvalue()).decode("utf-8")
-        mime_a = file_a.type if file_a.type else "video/mp4"
-        mime_b = file_b.type if file_b.type else "video/mp4"
+        with st.spinner("正在進行手機影片格式優化與雙影解碼 (H.264 MP4)..."):
+            bytes_a, mime_a = process_and_convert_video(file_a)
+            bytes_b, mime_b = process_and_convert_video(file_b)
+            b64_a = base64.b64encode(bytes_a).decode("utf-8")
+            b64_b = base64.b64encode(bytes_b).decode("utf-8")
 
         dual_html_template = """<!DOCTYPE html>
         <html>
@@ -1963,7 +2003,6 @@ elif page == "課表紀錄 Training Plan":
             else:
                 target_athlete = user["username"]
 
-            # 自動繼承前次未痊癒傷病（持續載入最新一次紀錄的部位與疼痛等級）
             if "dyn_injuries_user" not in st.session_state or st.session_state["dyn_injuries_user"] != target_athlete:
                 prev_plans = get_training_plans(username=target_athlete)
                 carried_injuries = []
@@ -1999,7 +2038,6 @@ elif page == "課表紀錄 Training Plan":
 
             captured_body_map_img = st.text_area("body_map_img_b64", key="captured_body_map_img", label_visibility="collapsed")
 
-            # 1. 基本訓練設定
             st.markdown("##### 1. 基本訓練設定 Basic Plan Info")
             c_p1, c_p2, c_p3 = st.columns(3)
             with c_p1:
@@ -2013,7 +2051,6 @@ elif page == "課表紀錄 Training Plan":
                 weather_env = st.text_input("氣候與場地環境 Weather", value="晴天 室外跑道 Sunny Outdoor", key="log_weather")
 
             st.markdown("---")
-            # 2. 體能與恢復狀態
             st.markdown("##### 2. 體能與恢復狀態 Recovery Status & Physiology")
             c_r1, c_r2, c_r3 = st.columns([1, 1.2, 1])
             with c_r1:
@@ -2062,7 +2099,6 @@ elif page == "課表紀錄 Training Plan":
                 st.rerun()
 
             st.markdown("---")
-            # 3. 課表內容與自主備註
             st.markdown("##### 3. 課表內容與自主備註 Plan Details & Notes")
             content = st.text_area("課表細節與組數規劃 Plan Details & Sets", height=120, key="log_content")
             user_notes = st.text_area("動作感覺與教練叮嚀 Notes & Feedback", height=80, key="log_user_notes")
