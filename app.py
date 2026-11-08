@@ -2454,20 +2454,18 @@ elif page == "歷史分析紀錄 History Records":
                                     for item in am.get("angles", []):
                                         st.write(f"• {item['name']}：`{item['value']}`")
 
-                            if "timer_metrics" in rec_details:
-                                tm = rec_details["timer_metrics"]
-                                st.write(f"**總時間 Total**：`{tm.get('total_time')} 秒` ｜ **T0 起點**：`{tm.get('t0_sec', '0.00')}s`")
-                                splits = tm.get("splits", [])
-                                if splits:
-                                    table_rows = [{"階段 Phase": s.get("segment"), "單段 (s)": f"{s.get('split_sec')}s", "速度 (m/s)": f"{s.get('speed_ms')} m/s"} for s in splits]
-                                    st.dataframe(pd.DataFrame(table_rows), use_container_width=True, hide_index=True)
-
-                        if is_coach or rec_user == user["username"]:
-                            if st.button(f"刪除紀錄 ID {rec_id}", key=f"del_btn_{rec_id}"):
-                                delete_record(rec_id)
-                                st.rerun()
-                        st.markdown("---")
-
+ if "timer_metrics" in rec_details:
+    tm = rec_details["timer_metrics"]
+    st.write(f"**總時間 Total**：`{tm.get('total_time')} 秒` ｜ **T0 起點**：`{tm.get('t0_sec', '0.00')}s`")
+    splits = tm.get("splits", [])
+    if splits:
+        table_rows = [{
+            "階段 Phase": s.get("segment"),
+            "累積時間 Cumulative (s)": f"{s.get('cum_sec', '-')}s",
+            "單段 Split (s)": f"{s.get('split_sec')}s",
+            "速度 Speed (m/s)": f"{s.get('speed_ms')} m/s"
+        } for s in splits]
+        st.dataframe(pd.DataFrame(table_rows), use_container_width=True, hide_index=True)
 # ==================== 【頁面 8：未來擴充規劃】 ====================
 elif page == "未來擴充規劃 Future Roadmap":
     st.title("未來擴充規劃 Future Roadmap")
