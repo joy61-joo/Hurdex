@@ -15,7 +15,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 # -------------------- 【頁面與全站 CSS 配置】 --------------------
-st.set_page_config(page_title="生物力學動作分析系統 Biomechanics Motion Analysis System", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="HURDEX", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
@@ -272,7 +272,7 @@ def send_reset_email(to_email, username, otp_code):
         msg = MIMEMultipart()
         msg['From'] = SENDER_EMAIL
         msg['To'] = to_email
-        msg['Subject'] = "【生物力學動作分析系統】重設密碼驗證碼 Password Reset Verification Code"
+        msg['Subject'] = "【HURDEX】重設密碼驗證碼 Password Reset Verification Code"
 
         body = f"""您好 {username}：
 
@@ -282,7 +282,7 @@ def send_reset_email(to_email, username, otp_code):
 請在系統頁面輸入此驗證碼以完成密碼重設。
 若非您本人操作，請忽略此郵件。
 
-生物力學動作分析系統 Biomechanics Motion Analysis System
+HURDEX
 """
         msg.attach(MIMEText(body, 'plain', 'utf-8'))
 
@@ -448,7 +448,7 @@ if "user_info" not in st.session_state:
     st.session_state["user_info"] = None
 
 # -------------------- 【側邊欄：導覽選單】 --------------------
-st.sidebar.title("生物力學動作分析系統 Biomechanics Motion Analysis System")
+st.sidebar.title("HURDEX")
 st.sidebar.markdown("---")
 
 if st.session_state["user_info"] is not None:
@@ -475,7 +475,7 @@ page = st.sidebar.radio("請選擇功能模組 Select Feature Module：", nav_op
 
 # ==================== 【頁面 1：系統首頁】 ====================
 if page == "系統首頁 Home":
-    st.title("跨欄生物力學與動作分析系統 Hurdle Biomechanics Analysis System")
+    st.title("HURDEX")
     st.markdown("---")
 
     if st.session_state["user_info"] is None:
