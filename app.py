@@ -1027,20 +1027,22 @@ elif page == "角度分析 Angle Analysis":
             <style>
                 * { box-sizing: border-box; }
                 body { font-family: -apple-system, sans-serif; background: transparent; color: #0f172a; margin: 0; padding: 0; }
-                .control-bar { display: flex; gap: 8px; margin-bottom: 10px; background: #ffffff; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; align-items: center; flex-wrap: wrap; }
+                .control-bar { display: flex; gap: 8px; margin-bottom: 12px; background: #ffffff; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; align-items: center; flex-wrap: wrap; }
                 .btn { background: #2563eb; color: #fff; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; }
-                .btn-secondary { background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; }
+                .btn-secondary { background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; }
                 .btn-t0 { background: #d97706; color: #fff; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; }
-                .btn-sync { background: #059669; color: #fff; font-weight: bold; margin-left: auto; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; }
-                .btn-tap { background: #2563eb; color: #fff; font-size: 14px; padding: 10px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; width: 100%; margin-top: 8px; }
-                .layout { display: flex; gap: 15px; width: 100%; }
-                .video-box { flex: 1.1; background: #ffffff; border-radius: 10px; border: 1px solid #e2e8f0; padding: 10px; }
-                video { width: 100%; border-radius: 6px; background: #000; max-height: 380px; object-fit: contain; }
-                .data-panel { flex: 0.9; background: #ffffff; border-radius: 10px; border: 1px solid #e2e8f0; padding: 12px; max-height: 500px; overflow-y: auto; }
-                table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 12px; }
-                th, td { padding: 6px; text-align: center; border-bottom: 1px solid #e2e8f0; }
-                th { color: #2563eb; background: #f8fafc; }
-                select { background: #ffffff; color: #0f172a; border: 1px solid #cbd5e1; padding: 4px; border-radius: 4px; font-weight: bold; }
+                .btn-sync { background: #059669; color: #fff; font-weight: bold; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; width: 100%; margin-top: 4px; }
+                .btn-tap { background: #2563eb; color: #fff; font-size: 15px; padding: 12px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; width: 100%; margin-top: 8px; box-shadow: 0 2px 4px rgba(37,99,235,0.2); }
+                
+                .layout { display: flex; flex-direction: column; gap: 16px; width: 100%; }
+                .video-box { width: 100%; background: #ffffff; border-radius: 10px; border: 1px solid #e2e8f0; padding: 12px; }
+                video { width: 100%; border-radius: 6px; background: #000; max-height: 420px; object-fit: contain; }
+                .data-panel { width: 100%; background: #ffffff; border-radius: 10px; border: 1px solid #e2e8f0; padding: 14px; }
+                
+                table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
+                th, td { padding: 8px 4px; text-align: center; border-bottom: 1px solid #e2e8f0; }
+                th { color: #2563eb; background: #f8fafc; font-weight: bold; }
+                select { background: #ffffff; color: #0f172a; border: 1px solid #cbd5e1; padding: 5px 8px; border-radius: 6px; font-weight: bold; }
             </style>
             </head>
             <body>
@@ -1050,16 +1052,16 @@ elif page == "角度分析 Angle Analysis":
                         <option value="men">男子 110mH Men 110mH 13.72m / 9.14m</option>
                         <option value="women">女子 100mH Women 100mH 13.00m / 8.50m</option>
                     </select>
-                    <button id="btnSetT0T" class="btn-t0">設為動作起點 T0 Set Motion Start T0</button>
-                    <button id="btnPlayT" class="btn">播放 暫停 Play Pause</button>
-                    <button id="btnStepBackT" class="btn btn-secondary">上一幀 Frame Back</button>
-                    <button id="btnStepForwardT" class="btn btn-secondary">下一幀 Frame Forward</button>
+                    <button id="btnSetT0T" class="btn-t0">設為起點 T0 Set T0</button>
+                    <button id="btnPlayT" class="btn">播放/暫停 Play/Pause</button>
+                    <button id="btnStepBackT" class="btn btn-secondary">上一幀</button>
+                    <button id="btnStepForwardT" class="btn btn-secondary">下一幀</button>
                     <span style="font-size:12px; color:#64748b;">速度 Speed:</span>
                     <select id="selSpeedT">
-                        <option value="0.25">0.25x 慢動作 Slow Motion</option>
+                        <option value="0.25">0.25x 慢動作</option>
                         <option value="0.5">0.5x</option>
                         <option value="0.75">0.75x</option>
-                        <option value="1.0" selected>1.0x 正常 Normal</option>
+                        <option value="1.0" selected>1.0x 正常</option>
                     </select>
                     <button id="btnUndoT" class="btn btn-secondary">撤銷 Undo</button>
                     <button id="btnClearT" class="btn btn-secondary">重置 Reset</button>
@@ -1069,22 +1071,23 @@ elif page == "角度分析 Angle Analysis":
                 <div class="layout">
                     <div class="video-box">
                         <video id="vidT" muted playsinline></video>
-                        <input type="range" id="sliderT" min="0" max="100" value="0" step="0.01" style="width:100%; margin-top:6px;">
+                        <input type="range" id="sliderT" min="0" max="100" value="0" step="0.01" style="width:100%; margin-top:8px;">
                         
-                        <div style="display:flex; justify-content:space-between; margin-top:4px; font-size:12px; color:#64748b;">
+                        <div style="display:flex; justify-content:space-between; margin-top:6px; font-size:13px; color:#64748b;">
                             <span>影片時間 Video Time: <b id="txtAbsTimeT" style="color:#0f172a;">0.00s</b></span>
-                            <span>時間 Time: <b id="txtRelTimeT" style="color:#059669; font-size:13px;">0.00s</b> T0: <span id="txtT0Val">未設定 Not Set</span></span>
+                            <span>時間 Time: <b id="txtRelTimeT" style="color:#059669; font-size:14px;">0.00s</b> T0: <span id="txtT0Val">未設定</span></span>
                         </div>
 
                         <button id="btnTap" class="btn-tap">1. 紀錄起跑與起跳瞬間 Press Space or Enter 1. Record Start Takeoff</button>
                     </div>
+
                     <div class="data-panel">
-                        <h4 style="margin:0 0 6px 0; color:#2563eb;">分段速度與累積時間數據 Split Speed & Cumulative Time Data</h4>
+                        <h4 style="margin:0 0 8px 0; color:#2563eb;">分段速度與累積時間數據 Split Speed & Cumulative Time Data</h4>
                         <table>
                             <thead><tr><th>階段 Phase</th><th>分段累積時間 Cumulative Time</th><th>單段耗時 Split Time</th><th>平均速度 Average Speed</th></tr></thead>
                             <tbody id="tb"></tbody>
                         </table>
-                        <div style="height:180px; margin-top:10px;"><canvas id="chartV"></canvas></div>
+                        <div style="height:220px; margin-top:14px;"><canvas id="chartV"></canvas></div>
                     </div>
                 </div>
 
@@ -1264,7 +1267,7 @@ elif page == "角度分析 Angle Analysis":
                 .replace("___MIME_SINGLE___", mime_single)
                 .replace("___B64_SINGLE___", b64_single)
             )
-            components.html(timer_html_code, height=680, scrolling=False)
+            components.html(timer_html_code, height=980, scrolling=True)
 
             st.markdown("---")
             st.subheader("儲存欄間速度紀錄 Save Hurdle Speed Record")
