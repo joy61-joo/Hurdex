@@ -4,7 +4,7 @@ import hashlib
 import json
 import os
 import random
-import sqlite3
+import psycopg2
 import smtplib
 import subprocess
 import tempfile
@@ -78,9 +78,8 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# -------------------- 【資料庫與系統驗證配置】 --------------------
+# -------------------- 【雲端資料庫 PostgreSQL 連線配置】 --------------------
 COACH_SECRET_CODE = "09290808"
-DB_NAME = "hurdle_analysis.db"
 
 # SMTP 發信伺服器設定
 SMTP_SERVER = "smtp.gmail.com"
@@ -88,8 +87,12 @@ SMTP_PORT = 587
 SENDER_EMAIL = "your_system_email@gmail.com"
 SENDER_PASSWORD = "your_app_password"
 
+def get_db_connection():
+    """連接 Supabase PostgreSQL 雲端資料庫"""
+    return psycopg2.connect(st.secrets["postgres"]["url"])
+
 def init_db():
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_db_connection()
     c = conn.cursor()
     c.execute('''
         CREATE TABLE IF NOT EXISTS users (
@@ -100,16 +103,6 @@ def init_db():
             created_at TEXT NOT NULL
         )
     ''')
-    
-    c.execute("PRAGMA table_info(users)")
-    columns = [column[1] for column in c.fetchall()]
-    if 'email' not in columns:
-        try:
-            c.execute("ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT ''")
-            conn.commit()
-        except sqlite3.OperationalError:
-            pass
-
     c.execute('''
         CREATE TABLE IF NOT EXISTS reset_tokens (
             username TEXT PRIMARY KEY,
@@ -119,7 +112,7 @@ def init_db():
     ''')
     c.execute('''
         CREATE TABLE IF NOT EXISTS records (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             username TEXT NOT NULL,
             module TEXT NOT NULL,
             title TEXT NOT NULL,
@@ -130,7 +123,7 @@ def init_db():
     ''')
     c.execute('''
         CREATE TABLE IF NOT EXISTS training_plans (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             username TEXT NOT NULL,
             plan_date TEXT NOT NULL,
             category TEXT NOT NULL,
@@ -141,6 +134,7 @@ def init_db():
         )
     ''')
     conn.commit()
+    c.close()
     conn.close()
 
 # -------------------- 【伺服器端手機影片自動轉碼處理】 --------------------
@@ -189,32 +183,36 @@ def register_user(username, password, role, email):
     if not username:
         return False, "使用者名稱不可為空 Username Cannot Be Empty"
     
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_db_connection()
     c = conn.cursor()
     
-    c.execute("SELECT username FROM users WHERE username = ?", (username,))
+    c.execute("SELECT username FROM users WHERE username = %s", (username,))
     if c.fetchone():
+        c.close()
         conn.close()
         return False, "該使用者名稱已被註冊 請更換其他名稱 Username Already Exists"
 
     try:
         pw_hash = hash_password(password)
         now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        c.execute("INSERT INTO users (username, password_hash, role, email, created_at) VALUES (?, ?, ?, ?, ?)",
+        c.execute("INSERT INTO users (username, password_hash, role, email, created_at) VALUES (%s, %s, %s, %s, %s)",
                   (username, pw_hash, role, email, now_str))
         conn.commit()
+        c.close()
         conn.close()
         return True, "註冊成功 請登入使用 Registration Successful Please Login"
-    except sqlite3.IntegrityError:
+    except psycopg2.IntegrityError:
+        c.close()
         conn.close()
         return False, "該使用者名稱已存在 請更換名稱 Username Exists"
 
 def check_login(username, password):
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_db_connection()
     c = conn.cursor()
     pw_hash = hash_password(password)
-    c.execute("SELECT username, role, email FROM users WHERE username = ? AND password_hash = ?", (username, pw_hash))
+    c.execute("SELECT username, role, email FROM users WHERE username = %s AND password_hash = %s", (username, pw_hash))
     user = c.fetchone()
+    c.close()
     conn.close()
     if user:
         return True, {"username": user[0], "role": user[1], "email": user[2]}
@@ -227,22 +225,25 @@ def update_username(old_username, new_username):
     if old_username == new_username:
         return False, "新舊帳號名稱相同，無需修改 Same Username"
 
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_db_connection()
     c = conn.cursor()
-    c.execute("SELECT username FROM users WHERE username = ?", (new_username,))
+    c.execute("SELECT username FROM users WHERE username = %s", (new_username,))
     if c.fetchone():
+        c.close()
         conn.close()
         return False, "該使用者名稱已存在 請更換其他名稱 Target Username Exists"
 
     try:
-        c.execute("UPDATE users SET username = ? WHERE username = ?", (new_username, old_username))
-        c.execute("UPDATE records SET username = ? WHERE username = ?", (new_username, old_username))
-        c.execute("UPDATE training_plans SET username = ? WHERE username = ?", (new_username, old_username))
-        c.execute("UPDATE reset_tokens SET username = ? WHERE username = ?", (new_username, old_username))
+        c.execute("UPDATE users SET username = %s WHERE username = %s", (new_username, old_username))
+        c.execute("UPDATE records SET username = %s WHERE username = %s", (new_username, old_username))
+        c.execute("UPDATE training_plans SET username = %s WHERE username = %s", (new_username, old_username))
+        c.execute("UPDATE reset_tokens SET username = %s WHERE username = %s", (new_username, old_username))
         conn.commit()
+        c.close()
         conn.close()
         return True, "帳號名稱修改成功 Username Updated Successfully"
     except Exception as e:
+        c.close()
         conn.close()
         return False, f"修改失敗 Failed: {str(e)}"
 
@@ -250,17 +251,19 @@ def update_password(username, old_password, new_password):
     if not old_password or not new_password:
         return False, "請輸入完整的舊密碼與新密碼 Please Fill All Password Fields"
 
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_db_connection()
     c = conn.cursor()
     old_hash = hash_password(old_password)
-    c.execute("SELECT username FROM users WHERE username = ? AND password_hash = ?", (username, old_hash))
+    c.execute("SELECT username FROM users WHERE username = %s AND password_hash = %s", (username, old_hash))
     if not c.fetchone():
+        c.close()
         conn.close()
         return False, "舊密碼不正確 Old Password Incorrect"
 
     new_hash = hash_password(new_password)
-    c.execute("UPDATE users SET password_hash = ? WHERE username = ?", (new_hash, username))
+    c.execute("UPDATE users SET password_hash = %s WHERE username = %s", (new_hash, username))
     conn.commit()
+    c.close()
     conn.close()
     return True, "密碼修改成功 Password Updated Successfully"
 
@@ -293,11 +296,12 @@ def send_reset_email(to_email, username, otp_code):
         return False, f"信件發送失敗（發送端未設定 SMTP）：{str(e)}"
 
 def request_password_reset(username):
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_db_connection()
     c = conn.cursor()
-    c.execute("SELECT email FROM users WHERE username = ?", (username,))
+    c.execute("SELECT email FROM users WHERE username = %s", (username,))
     row = c.fetchone()
     if not row:
+        c.close()
         conn.close()
         return False, "找不到該使用者名稱 Account Not Found"
 
@@ -305,9 +309,14 @@ def request_password_reset(username):
     otp_code = f"{random.randint(100000, 999999)}"
     expires_at = (datetime.datetime.now() + datetime.timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
 
-    c.execute("INSERT OR REPLACE INTO reset_tokens (username, otp_code, expires_at) VALUES (?, ?, ?)",
-              (username, otp_code, expires_at))
+    c.execute("""
+        INSERT INTO reset_tokens (username, otp_code, expires_at) 
+        VALUES (%s, %s, %s)
+        ON CONFLICT (username) 
+        DO UPDATE SET otp_code = EXCLUDED.otp_code, expires_at = EXCLUDED.expires_at
+    """, (username, otp_code, expires_at))
     conn.commit()
+    c.close()
     conn.close()
 
     ok, msg = send_reset_email(user_email, username, otp_code)
@@ -316,12 +325,13 @@ def request_password_reset(username):
     return True, msg
 
 def verify_and_reset_password(username, otp_code, new_password):
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_db_connection()
     c = conn.cursor()
-    c.execute("SELECT otp_code, expires_at FROM reset_tokens WHERE username = ?", (username,))
+    c.execute("SELECT otp_code, expires_at FROM reset_tokens WHERE username = %s", (username,))
     row = c.fetchone()
 
     if not row:
+        c.close()
         conn.close()
         return False, "尚未索取驗證碼或驗證碼已無效 Please Request Verification Code First"
 
@@ -330,88 +340,100 @@ def verify_and_reset_password(username, otp_code, new_password):
     expires_dt = datetime.datetime.strptime(expires_at_str, "%Y-%m-%d %H:%M:%S")
 
     if now_dt > expires_dt:
+        c.close()
         conn.close()
         return False, "驗證碼已過期，請重新索取 Verification Code Expired"
 
     if otp_code.strip() != db_otp:
+        c.close()
         conn.close()
         return False, "驗證碼錯誤 Verification Code Incorrect"
 
     pw_hash = hash_password(new_password)
-    c.execute("UPDATE users SET password_hash = ? WHERE username = ?", (pw_hash, username))
-    c.execute("DELETE FROM reset_tokens WHERE username = ?", (username,))
+    c.execute("UPDATE users SET password_hash = %s WHERE username = %s", (pw_hash, username))
+    c.execute("DELETE FROM reset_tokens WHERE username = %s", (username,))
     conn.commit()
+    c.close()
     conn.close()
     return True, "密碼重設成功 請使用新密碼登入 Password Reset Successful"
 
 def save_record(username, module, title, details_dict):
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_db_connection()
     c = conn.cursor()
     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     details_json = json.dumps(details_dict, ensure_ascii=False)
-    c.execute("INSERT INTO records (username, module, title, details, timestamp) VALUES (?, ?, ?, ?, ?)",
+    c.execute("INSERT INTO records (username, module, title, details, timestamp) VALUES (%s, %s, %s, %s, %s)",
               (username, module, title, details_json, now_str))
     conn.commit()
+    c.close()
     conn.close()
 
 def get_user_records(username=None, module=None):
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_db_connection()
     c = conn.cursor()
     query = "SELECT id, username, module, title, details, timestamp FROM records"
     params = []
     where_clauses = []
     if username:
-        where_clauses.append("username = ?")
+        where_clauses.append("username = %s")
         params.append(username)
     if module:
-        where_clauses.append("module = ?")
+        where_clauses.append("module = %s")
         params.append(module)
     if where_clauses:
         query += " WHERE " + " AND ".join(where_clauses)
     query += " ORDER BY id DESC"
     c.execute(query, tuple(params))
     rows = c.fetchall()
+    c.close()
     conn.close()
     return rows
 
 def delete_record(record_id):
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_db_connection()
     c = conn.cursor()
-    c.execute("DELETE FROM records WHERE id = ?", (record_id,))
+    c.execute("DELETE FROM records WHERE id = %s", (record_id,))
     conn.commit()
+    c.close()
     conn.close()
 
 def save_training_plan(username, plan_date, category, content, intensity, notes):
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_db_connection()
     c = conn.cursor()
     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    c.execute("INSERT INTO training_plans (username, plan_date, category, content, intensity, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    c.execute("INSERT INTO training_plans (username, plan_date, category, content, intensity, notes, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s)",
               (username, plan_date, category, content, intensity, notes, now_str))
     conn.commit()
+    c.close()
     conn.close()
 
 def get_training_plans(username=None):
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_db_connection()
     c = conn.cursor()
     query = "SELECT id, username, plan_date, category, content, intensity, notes, created_at FROM training_plans"
     params = []
     if username:
-        query += " WHERE username = ?"
+        query += " WHERE username = %s"
         params.append(username)
     query += " ORDER BY plan_date ASC, id ASC"
     c.execute(query, tuple(params))
     rows = c.fetchall()
+    c.close()
     conn.close()
     return rows
 
 def delete_training_plan(plan_id):
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_db_connection()
     c = conn.cursor()
-    c.execute("DELETE FROM training_plans WHERE id = ?", (plan_id,))
+    c.execute("DELETE FROM training_plans WHERE id = %s", (plan_id,))
     conn.commit()
+    c.close()
     conn.close()
 
-init_db()
+try:
+    init_db()
+except Exception as e:
+    st.error(f"雲端資料庫初始化連線失敗，請檢查 Secrets 中的 DB URL: {e}")
 
 if "user_info" not in st.session_state:
     st.session_state["user_info"] = None
@@ -1853,10 +1875,11 @@ elif page == "跨期數據對比 Longitudinal Comparison":
         is_coach = (user["role"] == "coach")
 
         if is_coach:
-            conn = sqlite3.connect(DB_NAME)
+            conn = get_db_connection()
             c = conn.cursor()
             c.execute("SELECT DISTINCT username FROM records")
             all_users = [r[0] for r in c.fetchall()]
+            c.close()
             conn.close()
             target_user = st.selectbox("請選擇選手 Select Athlete：", all_users) if all_users else None
         else:
@@ -1993,10 +2016,11 @@ elif page == "課表紀錄 Training Plan":
             st.subheader("填寫訓練日誌內容 Fill Training Log Details")
             
             if is_coach:
-                conn = sqlite3.connect(DB_NAME)
+                conn = get_db_connection()
                 c = conn.cursor()
                 c.execute("SELECT DISTINCT username FROM users WHERE role='player'")
                 player_list = [r[0] for r in c.fetchall()]
+                c.close()
                 conn.close()
                 if not player_list: player_list = [user["username"]]
                 target_athlete = st.selectbox("指定選手 Select Athlete", player_list, key="plan_sel_athlete")
@@ -2290,10 +2314,11 @@ elif page == "課表紀錄 Training Plan":
         with tab_view_plan:
             st.subheader("訓練課表與日誌歷史檔案 Training Log Archive")
             if is_coach:
-                conn = sqlite3.connect(DB_NAME)
+                conn = get_db_connection()
                 c = conn.cursor()
                 c.execute("SELECT DISTINCT username FROM training_plans")
                 plan_users = [r[0] for r in c.fetchall()]
+                c.close()
                 conn.close()
                 filter_user = st.selectbox("篩選選手 Filter Athlete", ["全隊所有人 Entire Team"] + plan_users)
                 query_user = None if filter_user == "全隊所有人 Entire Team" else filter_user
