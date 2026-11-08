@@ -2454,16 +2454,6 @@ elif page == "歷史分析紀錄 History Records":
                                     for item in am.get("angles", []):
                                         st.write(f"• {item['name']}：`{item['value']}`")
 
-with col_d2:
-                            st.markdown("##### 數據明細 Data Details：")
-                            if "angle_metrics" in rec_details:
-                                am = rec_details["angle_metrics"]
-                                if isinstance(am, dict):
-                                    rel_t = am.get("rel_time_sec", am.get("time_sec", "0.00"))
-                                    st.write(f"時間 Time：`{rel_t} 秒` ｜ 階段 Phase：`{am.get('phase_tag', '未標註')}`")
-                                    for item in am.get("angles", []):
-                                        st.write(f"• {item['name']}：`{item['value']}`")
-
                             if "timer_metrics" in rec_details:
                                 tm = rec_details["timer_metrics"]
                                 st.write(f"**總時間 Total**：`{tm.get('total_time')} 秒` ｜ **T0 起點**：`{tm.get('t0_sec', '0.00')}s`")
@@ -2476,6 +2466,13 @@ with col_d2:
                                         "速度 Speed (m/s)": f"{s.get('speed_ms')} m/s"
                                     } for s in splits]
                                     st.dataframe(pd.DataFrame(table_rows), use_container_width=True, hide_index=True)
+
+                        if is_coach or rec_user == user["username"]:
+                            if st.button(f"刪除紀錄 ID {rec_id}", key=f"del_btn_{rec_id}"):
+                                delete_record(rec_id)
+                                st.rerun()
+                        st.markdown("---")
+
 # ==================== 【頁面 8：未來擴充規劃】 ====================
 elif page == "未來擴充規劃 Future Roadmap":
     st.title("未來擴充規劃 Future Roadmap")
