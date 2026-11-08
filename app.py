@@ -2506,6 +2506,118 @@ elif page == "歷史分析紀錄 History Records":
                                     
                         st.markdown("---")
 
+# ==================== 【頁面：比賽行事曆與倒數】 ====================
+elif page == "比賽行事曆 Competition Calendar":
+    st.title("🏆 比賽行事曆與賽事倒數 Competition Calendar & Countdown")
+    st.markdown("---")
+
+    if st.session_state["user_info"] is None:
+        st.warning("請先在左側邊欄登入帳號 Please Login in Sidebar First")
+    else:
+        user = st.session_state["user_info"]
+        is_coach = (user["role"] == "coach")
+
+        # 教練可切換查看特定選手或全隊賽事
+        if is_coach:
+            conn = get_db_connection()
+            c = conn.cursor()
+            c.execute("SELECT DISTINCT username FROM users")
+            all_users = [r[0] for r in c.fetchall()]
+            c.close()
+            conn.close()
+            selected_user = st.selectbox("請選擇檢視選手 Select Athlete Calendar：", ["全隊賽事 All Team"] + all_users)
+            target_user = None if selected_user == "全隊賽事 All Team" else selected_user
+        else:
+            target_user = user["username"]
+
+        competitions = get_competitions(username=target_user)
+        today = datetime.date.today()
+
+        # -------------------- 1. 近期賽事倒數卡片 --------------------
+        st.subheader("⏳ 即將到來的賽事倒數 Upcoming Events Countdown")
+        
+        upcoming_comps = []
+        for comp in competitions:
+            c_id, c_user, c_name, c_date_str, c_loc, c_notes, _ = comp
+            try:
+                c_date = datetime.datetime.strptime(c_date_str, "%Y-%m-%d").date()
+                days_left = (c_date - today).days
+                if days_left >= 0:
+                    upcoming_comps.append((days_left, c_name, c_date_str, c_loc, c_notes, c_user, c_id))
+            except Exception:
+                continue
+
+        upcoming_comps.sort(key=lambda x: x[0])  # 依剩餘天數排序
+
+        if upcoming_comps:
+            cols = st.columns(min(len(upcoming_comps), 3))
+            for idx, item in enumerate(upcoming_comps[:3]):
+                days_left, c_name, c_date_str, c_loc, c_notes, c_user, c_id = item
+                with cols[idx % 3]:
+                    if days_left == 0:
+                        st.error(f"🔥 今日比賽！ Today!\n\n**{c_name}**\n\n地點：{c_loc if c_loc else '未填寫'}")
+                    elif days_left <= 7:
+                        st.warning(f"⏰ 倒數 **{days_left}** 天 Days\n\n**{c_name}** ({c_date_str})\n\n地點：{c_loc if c_loc else '未填寫'}")
+                    else:
+                        st.metric(label=f"{c_name} ({c_user})", value=f"{days_left} 天", delta=f"日期: {c_date_str}")
+        else:
+            st.info("目前尚無即將到來的賽事 No Upcoming Competitions")
+
+        st.markdown("---")
+
+        tab_add, tab_list = st.tabs(["➕ 新增賽事日程 Add Competition", "📅 賽事行程總覽 Calendar List"])
+
+        # -------------------- 2. 新增賽事表單 --------------------
+        with tab_add:
+            st.subheader("填寫賽事資訊 Add Event Details")
+            with st.form("add_comp_form"):
+                col_c1, col_c2 = st.columns(2)
+                with col_c1:
+                    comp_name = st.text_input("賽事名稱 Competition Name (例: 全國中等學校運動會)")
+                    comp_date = st.date_input("比賽日期 Competition Date", value=today)
+                with col_c2:
+                    comp_location = st.text_input("比賽地點/場地 Location (例: 臺北田徑場)")
+                    comp_athlete = st.text_input("參賽選手/帳號 Athlete", value=user["username"], disabled=not is_coach)
+
+                comp_notes = st.text_area("賽事目標與備註 Notes (例: 預計達標 13.90s / 檢驗欄間三步穩定度)")
+                
+                if st.form_submit_button("儲存賽事日程 Save Competition"):
+                    if comp_name.strip():
+                        target_save_user = comp_athlete if is_coach else user["username"]
+                        save_competition(target_save_user, comp_name.strip(), comp_date, comp_location.strip(), comp_notes.strip())
+                        st.success(f"已成功新增賽事【{comp_name}】至行事曆！")
+                        st.rerun()
+                    else:
+                        st.warning("請輸入賽事名稱 Please Enter Competition Name")
+
+        # -------------------- 3. 賽事清單列表 --------------------
+        with tab_list:
+            st.subheader("所有賽事紀錄 All Events")
+            if not competitions:
+                st.caption("尚無賽事日程紀錄 No Competition Records Found")
+            else:
+                for comp in competitions:
+                    c_id, c_user, c_name, c_date_str, c_loc, c_notes, _ = comp
+                    try:
+                        c_date = datetime.datetime.strptime(c_date_str, "%Y-%m-%d").date()
+                        days_left = (c_date - today).days
+                    except Exception:
+                        days_left = -1
+
+                    status_tag = f"🔴 已結束 ({abs(days_left)} 天前)" if days_left < 0 else (f"🔥 今日登場" if days_left == 0 else f"🟢 剩餘 {days_left} 天")
+
+                    with st.expander(f"{c_date_str} ｜ {c_name} ｜ {status_tag} (選手: {c_user})"):
+                        st.write(f"• **賽事名稱**：{c_name}")
+                        st.write(f"• **比賽日期**：{c_date_str}")
+                        st.write(f"• **舉辦地點**：{c_loc if c_loc else '未填寫'}")
+                        if c_notes:
+                            st.write(f"• **目標與備註**：\n```text\n{c_notes}\n```")
+                        
+                        if is_coach or c_user == user["username"]:
+                            if st.button(f"刪除此賽事 Delete Event ID {c_id}", key=f"del_comp_{c_id}"):
+                                delete_competition(c_id)
+                                st.success("賽事已刪除！")
+                                st.rerun()
 # ==================== 【頁面 8：未來擴充規劃】 ====================
 elif page == "未來擴充規劃 Future Roadmap":
     st.title("未來擴充規劃 Future Roadmap")
