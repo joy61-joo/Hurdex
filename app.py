@@ -133,6 +133,17 @@ def init_db():
             created_at TEXT NOT NULL
         )
     ''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS competitions (
+            id SERIAL PRIMARY KEY,
+            username TEXT NOT NULL,
+            comp_name TEXT NOT NULL,
+            comp_date TEXT NOT NULL,
+            location TEXT DEFAULT '',
+            notes TEXT DEFAULT '',
+            created_at TEXT NOT NULL
+        )
+    ''')    
     conn.commit()
     c.close()
     conn.close()
@@ -447,6 +458,38 @@ except Exception as e:
 if "user_info" not in st.session_state:
     st.session_state["user_info"] = None
 
+def save_competition(username, comp_name, comp_date, location, notes):
+    conn = get_db_connection()
+    c = conn.cursor()
+    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    c.execute("INSERT INTO competitions (username, comp_name, comp_date, location, notes, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
+              (username, comp_name, str(comp_date), location, notes, now_str))
+    conn.commit()
+    c.close()
+    conn.close()
+
+def get_competitions(username=None):
+    conn = get_db_connection()
+    c = conn.cursor()
+    query = "SELECT id, username, comp_name, comp_date, location, notes, created_at FROM competitions"
+    params = []
+    if username:
+        query += " WHERE username = %s"
+        params.append(username)
+    query += " ORDER BY comp_date ASC"
+    c.execute(query, tuple(params))
+    rows = c.fetchall()
+    c.close()
+    conn.close()
+    return rows
+
+def delete_competition(comp_id):
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM competitions WHERE id = %s", (comp_id,))
+    conn.commit()
+    c.close()
+    conn.close()
 # -------------------- 【側邊欄：導覽選單】 --------------------
 st.sidebar.title("HURDEX")
 st.sidebar.markdown("---")
