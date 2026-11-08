@@ -462,6 +462,7 @@ st.sidebar.markdown("---")
 
 nav_options = [
     "系統首頁 Home",
+    "比賽行事曆 Competition Calendar",
     "角度分析 Angle Analysis",
     "殘影軌跡 Ghosting Track",
     "雙影同步 Dual Video Sync",
