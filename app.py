@@ -397,6 +397,15 @@ def delete_record(record_id):
     c.close()
     conn.close()
 
+def update_record_details(record_id, updated_details_dict):
+    """更新雲端資料庫中特定紀錄的 details JSON 內容"""
+    conn = get_db_connection()
+    c = conn.cursor()
+    details_json = json.dumps(updated_details_dict, ensure_ascii=False)
+    c.execute("UPDATE records SET details = %s WHERE id = %s", (details_json, record_id))
+    conn.commit()
+    c.close()
+    conn.close()
 def save_training_plan(username, plan_date, category, content, intensity, notes):
     conn = get_db_connection()
     c = conn.cursor()
@@ -2467,10 +2476,31 @@ elif page == "歷史分析紀錄 History Records":
                                     } for s in splits]
                                     st.dataframe(pd.DataFrame(table_rows), use_container_width=True, hide_index=True)
 
-                        if is_coach or rec_user == user["username"]:
-                            if st.button(f"刪除紀錄 ID {rec_id}", key=f"del_btn_{rec_id}"):
-                                delete_record(rec_id)
+                        # -------------------- 【分析筆記與註記區塊】 --------------------
+                        st.markdown("##### 📝 動作分析筆記與教練叮嚀 Analysis Notes")
+                        current_notes = rec_details.get("notes", "")
+                        
+                        note_input = st.text_area(
+                            "輸入或修改本筆紀錄的檢討與建議 Notes & Comments",
+                            value=current_notes,
+                            height=100,
+                            key=f"note_input_{rec_id}"
+                        )
+                        
+                        col_btn1, col_btn2 = st.columns([0.3, 0.7])
+                        with col_btn1:
+                            if st.button("💾 儲存筆記 Save Note", key=f"save_note_btn_{rec_id}", use_container_width=True):
+                                rec_details["notes"] = note_input
+                                update_record_details(rec_id, rec_details)
+                                st.success("筆記已成功更新至資料庫！Note Updated!")
                                 st.rerun()
+
+                        if is_coach or rec_user == user["username"]:
+                            with col_btn2:
+                                if st.button(f"🗑️ 刪除整筆紀錄 ID {rec_id}", key=f"del_btn_{rec_id}"):
+                                    delete_record(rec_id)
+                                    st.rerun()
+                                    
                         st.markdown("---")
 
 # ==================== 【頁面 8：未來擴充規劃】 ====================
