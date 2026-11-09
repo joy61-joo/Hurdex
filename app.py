@@ -145,7 +145,7 @@ def init_db():
         )
     ''')
 
-    # 【資料庫自動修復移轉 Migration】自動補齊舊資料庫缺乏的欄位
+    # 【資料庫自動修復移轉 Migration】
     migration_sqls = [
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS team_code TEXT NOT NULL DEFAULT 'DEFAULT_TEAM'",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT NOT NULL DEFAULT ''",
@@ -1404,7 +1404,7 @@ elif page == "殘影軌跡 Ghosting Track":
                         save_record(u["username"], u["team_code"], "攻欄至落地殘影軌跡 Ghosting Track", rec_title_ghost, {"image_b64": captured_ghost_img, "saved_at": str(datetime.datetime.now())})
                         st.success("儲存成功！")
 
-# ==================== 【頁面 6：雙影同步】 ====================
+# ==================== 【頁面 6：雙影同步 (已新增各自獨立播放滑桿)】 ====================
 elif page == "雙影同步 Dual Video Sync":
     st.title("雙影同步對比模組 Dual Video Sync Module")
     st.markdown("---")
@@ -1456,19 +1456,36 @@ elif page == "雙影同步 Dual Video Sync":
             
             <div class="layout">
                 <div class="vid-card">
-                    <h5 style="margin:0 0 6px 0; color:#2563eb;">影片一 Video 1</h5>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        <h5 style="margin:0; color:#2563eb;">影片一 Video 1</h5>
+                        <span id="txtTimeA" style="font-size:12px; font-weight:bold; color:#2563eb;">0.00s</span>
+                    </div>
                     <video id="vidA" muted playsinline></video>
-                    <button id="btnSetAlignA" style="margin-top:6px; background:#2563eb; color:#fff; border:none; padding:5px 10px; border-radius:4px; font-weight:bold; cursor:pointer;">設為影片一對齊點 Alignment</button>
+                    <input type="range" id="sliderA" min="0" max="100" value="0" step="0.01" style="width:100%; margin-top:6px;">
+                    <div style="display:flex; gap:6px; margin-top:6px;">
+                        <button id="btnPlayA" style="background:#f1f5f9; color:#334155; border:1px solid #cbd5e1; padding:4px 8px; border-radius:4px; font-size:12px; cursor:pointer;">播放/暫停 A</button>
+                        <button id="btnSetAlignA" style="background:#2563eb; color:#fff; border:none; padding:4px 8px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;">設為對齊點 A</button>
+                    </div>
                 </div>
+                
                 <div class="vid-card">
-                    <h5 style="margin:0 0 6px 0; color:#d97706;">影片二 Video 2</h5>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        <h5 style="margin:0; color:#d97706;">影片二 Video 2</h5>
+                        <span id="txtTimeB" style="font-size:12px; font-weight:bold; color:#d97706;">0.00s</span>
+                    </div>
                     <video id="vidB" muted playsinline></video>
-                    <button id="btnSetAlignB" style="margin-top:6px; background:#d97706; color:#fff; border:none; padding:5px 10px; border-radius:4px; font-weight:bold; cursor:pointer;">設為影片二對齊點 Alignment</button>
+                    <input type="range" id="sliderB" min="0" max="100" value="0" step="0.01" style="width:100%; margin-top:6px;">
+                    <div style="display:flex; gap:6px; margin-top:6px;">
+                        <button id="btnPlayB" style="background:#f1f5f9; color:#334155; border:1px solid #cbd5e1; padding:4px 8px; border-radius:4px; font-size:12px; cursor:pointer;">播放/暫停 B</button>
+                        <button id="btnSetAlignB" style="background:#d97706; color:#fff; border:none; padding:4px 8px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;">設為對齊點 B</button>
+                    </div>
                 </div>
             </div>
 
             <script>
                 const vidA = document.getElementById('vidA'), vidB = document.getElementById('vidB');
+                const sliderA = document.getElementById('sliderA'), sliderB = document.getElementById('sliderB');
+                const txtTimeA = document.getElementById('txtTimeA'), txtTimeB = document.getElementById('txtTimeB');
                 const sliderMaster = document.getElementById('sliderMaster'), txtMasterTime = document.getElementById('txtMasterTime');
                 let alignTimeA = 0, alignTimeB = 0;
 
@@ -1499,8 +1516,26 @@ elif page == "雙影同步 Dual Video Sync":
                     vidB.src = URL.createObjectURL(b64ToBlob("___B64_B___", "___MIME_B___"));
                 } catch(e){}
 
-                document.getElementById('btnSetAlignA').addEventListener('click', () => { alignTimeA = vidA.currentTime; alert(`影片一對齊點: ${alignTimeA.toFixed(2)}s`); });
-                document.getElementById('btnSetAlignB').addEventListener('click', () => { alignTimeB = vidB.currentTime; alert(`影片二對齊點: ${alignTimeB.toFixed(2)}s`); });
+                vidA.addEventListener('loadedmetadata', () => { sliderA.max = vidA.duration; });
+                vidB.addEventListener('loadedmetadata', () => { sliderB.max = vidB.duration; });
+
+                vidA.addEventListener('timeupdate', () => {
+                    txtTimeA.innerText = vidA.currentTime.toFixed(2) + 's';
+                    if (!vidA.paused) sliderA.value = vidA.currentTime;
+                });
+                vidB.addEventListener('timeupdate', () => {
+                    txtTimeB.innerText = vidB.currentTime.toFixed(2) + 's';
+                    if (!vidB.paused) sliderB.value = vidB.currentTime;
+                });
+
+                sliderA.addEventListener('input', (e) => { vidA.currentTime = parseFloat(e.target.value); txtTimeA.innerText = vidA.currentTime.toFixed(2) + 's'; });
+                sliderB.addEventListener('input', (e) => { vidB.currentTime = parseFloat(e.target.value); txtTimeB.innerText = vidB.currentTime.toFixed(2) + 's'; });
+
+                document.getElementById('btnPlayA').addEventListener('click', () => { if (vidA.paused) vidA.play(); else vidA.pause(); });
+                document.getElementById('btnPlayB').addEventListener('click', () => { if (vidB.paused) vidB.play(); else vidB.pause(); });
+
+                document.getElementById('btnSetAlignA').addEventListener('click', () => { alignTimeA = vidA.currentTime; alert(`影片一對齊點設為: ${alignTimeA.toFixed(2)}s`); });
+                document.getElementById('btnSetAlignB').addEventListener('click', () => { alignTimeB = vidB.currentTime; alert(`影片二對齊點設為: ${alignTimeB.toFixed(2)}s`); });
 
                 sliderMaster.addEventListener('input', (e) => {
                     const relOffset = parseFloat(e.target.value);
@@ -1554,7 +1589,7 @@ elif page == "雙影同步 Dual Video Sync":
         </html>"""
 
         dual_html_code = dual_html_template.replace("___B64_A___", b64_a).replace("___MIME_A___", mime_a).replace("___B64_B___", b64_b).replace("___MIME_B___", mime_b)
-        components.html(dual_html_code, height=720, scrolling=False)
+        components.html(dual_html_code, height=760, scrolling=False)
 
         st.markdown("---")
         captured_dual_img = st.text_area("dual_img_b64", key="captured_dual_img", label_visibility="collapsed")
@@ -1572,7 +1607,7 @@ elif page == "雙影同步 Dual Video Sync":
                         })
                         st.success("儲存成功！")
 
-# ==================== 【頁面 7：跨期數據對比】 ====================
+# ==================== 【頁面 7：跨期數據對比 (已加入毫秒刻度優化)】 ====================
 elif page == "跨期數據對比 Longitudinal Comparison":
     st.title("跨期數據對比分析 Longitudinal Comparison Analysis")
     st.markdown("---")
@@ -1606,6 +1641,10 @@ elif page == "跨期數據對比 Longitudinal Comparison":
                     selected_recs = sorted([rec_options[k] for k in selected_keys], key=lambda x: x[5])
 
                     if mod_choice == "欄間秒數及速度計算 Hurdle Time & Speed Calculation":
+                        unit_choice = st.radio("選擇圖表縱軸單位 (精細度)：", ["毫秒 (ms) [推薦：數據起伏與差異最清晰]", "秒 (s)"], horizontal=True)
+                        scale_factor = 1000.0 if "毫秒" in unit_choice else 1.0
+                        unit_symbol = "ms" if "毫秒" in unit_choice else "s"
+
                         plot_dict_split = {}
                         table_data = {}
                         for rec in selected_recs:
@@ -1619,12 +1658,12 @@ elif page == "跨期數據對比 Longitudinal Comparison":
                                 except ValueError: split_val = 0.0
 
                                 if seg not in plot_dict_split: plot_dict_split[seg] = {}
-                                plot_dict_split[seg][rec_label] = split_val
+                                plot_dict_split[seg][rec_label] = round(split_val * scale_factor, 2)
 
                                 if seg not in table_data: table_data[seg] = {}
-                                table_data[seg][rec_label] = f"單段 {s.get('split_sec')}s (累積 {s.get('cum_sec')}s) ｜ 速度 {s.get('speed_ms')} m/s"
+                                table_data[seg][rec_label] = f"單段 {s.get('split_sec')}s ({round(split_val * scale_factor, 1)}{unit_symbol}) ｜ 累積 {s.get('cum_sec')}s ｜ 速度 {s.get('speed_ms')} m/s"
 
-                        st.markdown("##### 跨期分段單段秒數變化趨勢折線圖 Line Chart (單位：秒)")
+                        st.markdown(f"##### 跨期分段單段時間變化趨勢折線圖 (單位：{unit_symbol})")
                         if plot_dict_split:
                             df_split = pd.DataFrame.from_dict(plot_dict_split, orient='index')
                             st.line_chart(df_split)
@@ -1668,7 +1707,7 @@ elif page == "跨期數據對比 Longitudinal Comparison":
                                 if isinstance(angles, list):
                                     for a in angles: st.write(f"• {a.get('name')}：`{a.get('value')}`")
 
-# ==================== 【頁面 8：課表紀錄 (含 HTML/SVG Body Map)】 ====================
+# ==================== 【頁面 8：課表紀錄】 ====================
 elif page == "課表紀錄 Training Plan":
     st.title("課表與訓練日誌紀錄 Training Plan & Daily Log")
     st.markdown("---")
