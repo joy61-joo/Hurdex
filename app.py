@@ -70,16 +70,18 @@ def generate_random_team_code(length=6):
 def init_db():
     conn = get_db_connection()
     c = conn.cursor()
+    # 1. 使用者資料表
     c.execute('''
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
             password_hash TEXT NOT NULL,
             role TEXT NOT NULL,
-            team_code TEXT NOT NULL,
+            team_code TEXT NOT NULL DEFAULT 'DEFAULT_TEAM',
             email TEXT NOT NULL DEFAULT '',
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL DEFAULT ''
         )
     ''')
+    # 2. 密碼重設 Token
     c.execute('''
         CREATE TABLE IF NOT EXISTS reset_tokens (
             username TEXT PRIMARY KEY,
@@ -87,6 +89,7 @@ def init_db():
             expires_at TEXT NOT NULL
         )
     ''')
+    # 3. 動作分析紀錄表
     c.execute('''
         CREATE TABLE IF NOT EXISTS records (
             id SERIAL PRIMARY KEY,
@@ -99,6 +102,7 @@ def init_db():
             FOREIGN KEY (username) REFERENCES users (username)
         )
     ''')
+    # 4. 訓練日誌表
     c.execute('''
         CREATE TABLE IF NOT EXISTS training_plans (
             id SERIAL PRIMARY KEY,
@@ -112,6 +116,7 @@ def init_db():
             created_at TEXT NOT NULL
         )
     ''')
+    # 5. 比賽行事曆表
     c.execute('''
         CREATE TABLE IF NOT EXISTS competitions (
             id SERIAL PRIMARY KEY,
@@ -125,6 +130,7 @@ def init_db():
             created_at TEXT NOT NULL
         )
     ''')
+    # 6. 運動防護與傷勢報告表
     c.execute('''
         CREATE TABLE IF NOT EXISTS injury_feedbacks (
             id SERIAL PRIMARY KEY,
@@ -139,17 +145,27 @@ def init_db():
         )
     ''')
 
-    for tbl in ["records", "training_plans", "competitions"]:
-        try: c.execute(f"ALTER TABLE {tbl} ADD COLUMN IF NOT EXISTS team_code TEXT DEFAULT 'DEFAULT_TEAM'")
-        except Exception: pass
-    try: c.execute("ALTER TABLE competitions ADD COLUMN IF NOT EXISTS end_date TEXT DEFAULT ''")
-    except Exception: pass
+    # 【資料庫自動修復移轉 Migration】自動補齊舊資料庫缺乏的欄位
+    migration_sqls = [
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS team_code TEXT NOT NULL DEFAULT 'DEFAULT_TEAM'",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE records ADD COLUMN IF NOT EXISTS team_code TEXT NOT NULL DEFAULT 'DEFAULT_TEAM'",
+        "ALTER TABLE training_plans ADD COLUMN IF NOT EXISTS team_code TEXT NOT NULL DEFAULT 'DEFAULT_TEAM'",
+        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS team_code TEXT NOT NULL DEFAULT 'DEFAULT_TEAM'",
+        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS end_date TEXT DEFAULT ''"
+    ]
+    for q in migration_sqls:
+        try:
+            c.execute(q)
+        except Exception:
+            pass
 
     conn.commit()
     c.close()
     conn.close()
 
-# -------------------- 【帳號與發訊認證 logic】 --------------------
+# -------------------- 【帳號與發訊認證 Logic】 --------------------
 def hash_password(password):
     return hashlib.sha256(password.encode('utf-8')).hexdigest()
 
