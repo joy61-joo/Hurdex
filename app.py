@@ -165,7 +165,21 @@ def save_competition(username, comp_name, start_date, end_date, location, notes)
     c.close()
     conn.close()
 
+def save_competition(username, comp_name, start_date, end_date, location, notes):
+    """新增比賽紀錄（支援開始與結束日期共 6 個參數）"""
+    conn = get_db_connection()
+    c = conn.cursor()
+    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    c.execute(
+        "INSERT INTO competitions (username, comp_name, comp_date, end_date, location, notes, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+        (username, comp_name, str(start_date), str(end_date), location, notes, now_str)
+    )
+    conn.commit()
+    c.close()
+    conn.close()
+
 def get_competitions(username=None):
+    """讀取比賽紀錄（確保包含 end_date 欄位）"""
     conn = get_db_connection()
     c = conn.cursor()
     query = "SELECT id, username, comp_name, comp_date, end_date, location, notes, created_at FROM competitions"
