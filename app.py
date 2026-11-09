@@ -155,24 +155,6 @@ def init_db():
     c.close()
     conn.close()
 
-def save_competition(username, comp_name, start_date, end_date=None, location="", notes=""):
-    """
-    賽事儲存函數（支援 5 或 6 個參數傳入，防範 TypeError）
-    """
-    # 若未傳入 end_date（只傳 5 個參數時），自動將結束日期預設為開始日期
-    if end_date is None or end_date == "":
-        end_date = start_date
-
-    conn = get_db_connection()
-    c = conn.cursor()
-    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    c.execute(
-        "INSERT INTO competitions (username, comp_name, comp_date, end_date, location, notes, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-        (username, comp_name, str(start_date), str(end_date), location, notes, now_str)
-    )
-    conn.commit()
-    c.close()
-    conn.close()
 def get_competitions(username=None):
     """讀取比賽紀錄（確保包含 end_date 欄位）"""
     conn = get_db_connection()
