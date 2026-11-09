@@ -155,14 +155,31 @@ def init_db():
     c.close()
     conn.close()
 
-def save_competition(username, comp_name, start_date, end_date=None, location="", notes=""):
-    """儲存賽事日程（支援 5 個或 6 個參數傳入，防止 TypeError）"""
-    if end_date is None or end_date == "":
-        end_date = start_date
-
+def save_competition(*args, **kwargs):
+    """
+    全相容性賽事儲存函數
+    能自動判斷並接收 5 個或 6 個位置參數，徹底解決 TypeError 覆蓋問題
+    """
     conn = get_db_connection()
     c = conn.cursor()
     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    if len(args) == 6:
+        username, comp_name, start_date, end_date, location, notes = args
+    elif len(args) == 5:
+        username, comp_name, start_date, location, notes = args
+        end_date = start_date
+    else:
+        username = kwargs.get("username", args[0] if len(args) > 0 else "")
+        comp_name = kwargs.get("comp_name", args[1] if len(args) > 1 else "")
+        start_date = kwargs.get("start_date", kwargs.get("comp_date", args[2] if len(args) > 2 else ""))
+        end_date = kwargs.get("end_date", args[3] if len(args) > 3 else start_date)
+        location = kwargs.get("location", args[4] if len(args) > 4 else "")
+        notes = kwargs.get("notes", args[5] if len(args) > 5 else "")
+
+    if not end_date:
+        end_date = start_date
+
     c.execute(
         "INSERT INTO competitions (username, comp_name, comp_date, end_date, location, notes, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s)",
         (username, comp_name, str(start_date), str(end_date), str(location), str(notes), now_str)
@@ -1265,13 +1282,14 @@ elif page == "角度分析 Angle Analysis":
                     function render() {
                         tb.innerHTML = '';
                         if (taps.length === 0) btnTap.innerText = '1. 紀錄起跑瞬間 Press Space 1. Record Start';
-                        else btnTap.innerText = `${taps.length+1}. 紀錄 Record H${taps.length} / Finish`;
+                        else if (taps.length === 11) btnTap.innerText = '12. 紀錄衝線終點 Record Finish';
+                        else btnTap.innerText = `${taps.length+1}. 紀錄 Record H${taps.length}`;
 
                         const dists = getDists();
                         let labels = [], vels = [];
                         for (let i = 0; i < taps.length; i++) {
                             let cum = taps[i] - taps[0];
-                            let lbl = i === 0 ? '起跑 Start T0' : (i === 1 ? '起跑->H1 Start->H1' : `H${i-1}->H${i}`);
+                            let lbl = i === 0 ? '起跑 Start T0' : (i === 1 ? '起跑->H1 Start->H1' : (i === 11 ? 'H10->終點 H10->Finish' : `H${i-1}->H${i}`));
                             let dtStr = '-', spdStr = '-';
                             if (i > 0) {
                                 let dt = taps[i] - taps[i-1];
@@ -1298,8 +1316,9 @@ elif page == "角度分析 Angle Analysis":
                             let cum = taps[i] - taps[0];
                             let dt = taps[i] - taps[i-1];
                             let spd = dt > 0 ? (dists[i-1] / dt) : 0;
+                            let segName = i === 1 ? '起跑->H1 Start->H1' : (i === 11 ? 'H10->終點 H10->Finish' : `H${i-1}->H${i}`);
                             splits.push({
-                                segment: i === 1 ? '起跑->H1 Start->H1' : `H${i-1}->H${i}`,
+                                segment: segName,
                                 cum_sec: cum.toFixed(2),
                                 split_sec: dt.toFixed(2),
                                 speed_ms: spd.toFixed(2)
@@ -1978,7 +1997,7 @@ elif page == "跨期數據對比 Longitudinal Comparison":
                     selected_recs = sorted([rec_options[k] for k in selected_keys], key=lambda x: x[5])
 
                     if mod_choice == "欄間秒數及速度計算 Hurdle Time & Speed Calculation":
-                        plot_dict_speed = {}
+                        plot_dict_split = {}
                         table_data = {}
 
                         for rec in selected_recs:
@@ -1988,22 +2007,30 @@ elif page == "跨期數據對比 Longitudinal Comparison":
                             rec_label = f"{rec[5]} ({rec[3]})"
 
                             for s in splits:
-                                seg = s.get("segment")
+                                seg = s.get("segment", "")
+                                if "H10->H11" in seg or "H11" in seg:
+                                    seg = "H10->終點 H10->Finish"
+
                                 spd = s.get("speed_ms", "0")
-                                split_t = s.get("split_sec", "-")
+                                split_t = s.get("split_sec", "0")
                                 cum_t = s.get("cum_sec", "-")
                                 
-                                if seg not in plot_dict_speed:
-                                    plot_dict_speed[seg] = {}
-                                plot_dict_speed[seg][rec_label] = float(spd)
+                                try:
+                                    split_val = float(split_t)
+                                except ValueError:
+                                    split_val = 0.0
+
+                                if seg not in plot_dict_split:
+                                    plot_dict_split[seg] = {}
+                                plot_dict_split[seg][rec_label] = split_val
 
                                 if seg not in table_data:
                                     table_data[seg] = {}
                                 table_data[seg][rec_label] = f"單段 {split_t}s (累積 {cum_t}s) ｜ 速度 {spd} m/s"
 
-                        st.markdown("##### 跨期分段速度變化趨勢折線圖 Speed Progression Line Chart")
-                        if plot_dict_speed:
-                            df_speed = pd.DataFrame.from_dict(plot_dict_speed, orient='index')
+                        st.markdown("##### 跨期分段單段秒數變化趨勢折線圖 Split Time Progression Line Chart (單位：秒 sec)")
+                        if plot_dict_split:
+                            df_split = pd.DataFrame.from_dict(plot_dict_split, orient='index')
 
                             CANONICAL_SEGMENTS = [
                                 '起跑->H1 Start->H1',
@@ -2011,15 +2038,15 @@ elif page == "跨期數據對比 Longitudinal Comparison":
                                 'H5->H6', 'H6->H7', 'H7->H8', 'H8->H9', 'H9->H10',
                                 'H10->終點 H10->Finish'
                             ]
-                            ordered_indices = [s for s in CANONICAL_SEGMENTS if s in df_speed.index]
-                            for s in df_speed.index:
+                            ordered_indices = [s for s in CANONICAL_SEGMENTS if s in df_split.index]
+                            for s in df_split.index:
                                 if s not in ordered_indices:
                                     ordered_indices.append(s)
                             
-                            df_speed = df_speed.reindex(ordered_indices)
-                            df_speed.index = pd.Categorical(df_speed.index, categories=ordered_indices, ordered=True)
-                            df_speed = df_speed.sort_index()
-                            st.line_chart(df_speed)
+                            df_split = df_split.reindex(ordered_indices)
+                            df_split.index = pd.Categorical(df_split.index, categories=ordered_indices, ordered=True)
+                            df_split = df_split.sort_index()
+                            st.line_chart(df_split)
 
                         st.markdown("##### 各段落耗時與平均速度對照表 Speed & Time Comparison Table")
                         if table_data:
