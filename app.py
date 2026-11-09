@@ -178,7 +178,40 @@ def delete_competition(comp_id):
     conn.commit()
     c.close()
     conn.close()
-# -------------------- 【伺服器端手機影片自動轉碼處理】 --------------------
+
+def save_competition(*args, **kwargs):
+    """
+    全相容性賽事儲存函數
+    能自動判斷並接收 5 個或 6 個位置參數，徹底解決 TypeError 覆蓋問題
+    """
+    conn = get_db_connection()
+    c = conn.cursor()
+    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # 動態解析傳入參數數量
+    if len(args) == 6:
+        username, comp_name, start_date, end_date, location, notes = args
+    elif len(args) == 5:
+        username, comp_name, start_date, location, notes = args
+        end_date = start_date
+    else:
+        username = kwargs.get("username", args[0] if len(args) > 0 else "")
+        comp_name = kwargs.get("comp_name", args[1] if len(args) > 1 else "")
+        start_date = kwargs.get("start_date", kwargs.get("comp_date", args[2] if len(args) > 2 else ""))
+        end_date = kwargs.get("end_date", args[3] if len(args) > 3 else start_date)
+        location = kwargs.get("location", args[4] if len(args) > 4 else "")
+        notes = kwargs.get("notes", args[5] if len(args) > 5 else "")
+
+    if not end_date:
+        end_date = start_date
+
+    c.execute(
+        "INSERT INTO competitions (username, comp_name, comp_date, end_date, location, notes, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+        (username, comp_name, str(start_date), str(end_date), str(location), str(notes), now_str)
+    )
+    conn.commit()
+    c.close()
+    conn.close()# -------------------- 【伺服器端手機影片自動轉碼處理】 --------------------
 def process_and_convert_video(uploaded_file):
     """將 iPhone (.MOV / H.265) 或手機影片自動透過 FFmpeg 轉碼為網頁通用 H.264 MP4"""
     if uploaded_file is None:
