@@ -2620,7 +2620,13 @@ elif page == "比賽行事曆 Competition Calendar":
         
         active_and_upcoming = []
         for comp in competitions:
-            c_id, c_user, c_name, c_start_str, c_end_str, c_loc, c_notes, _ = comp
+            # 相容性處理解包（防範舊資料欄位數少一個）
+            if len(comp) >= 8:
+                c_id, c_user, c_name, c_start_str, c_end_str, c_loc, c_notes, _ = comp[:8]
+            else:
+                c_id, c_user, c_name, c_start_str, c_loc, c_notes, _ = comp[:7]
+                c_end_str = c_start_str
+
             try:
                 c_start = datetime.datetime.strptime(c_start_str, "%Y-%m-%d").date()
                 c_end = datetime.datetime.strptime(c_end_str, "%Y-%m-%d").date() if c_end_str else c_start
@@ -2628,7 +2634,6 @@ elif page == "比賽行事曆 Competition Calendar":
                 days_to_start = (c_start - today).days
                 days_to_end = (c_end - today).days
 
-                # 尚未結束的賽事（今天小於等於結束日期）
                 if days_to_end >= 0:
                     active_and_upcoming.append({
                         "id": c_id, "user": c_user, "name": c_name,
@@ -2640,7 +2645,6 @@ elif page == "比賽行事曆 Competition Calendar":
             except Exception:
                 continue
 
-        # 排序：進行中優先，接著依開始日期近到遠
         active_and_upcoming.sort(key=lambda x: (not x["is_active"], x["days_to_start"]))
 
         if active_and_upcoming:
@@ -2668,11 +2672,11 @@ elif page == "比賽行事曆 Competition Calendar":
 
         tab_add, tab_list = st.tabs(["➕ 新增賽事日程 Add Competition", "📅 賽事行程總覽 Calendar List"])
 
-        # -------------------- 2. 新增賽事表單（支援多日） --------------------
+        # -------------------- 2. 新增賽事表單（支援單日/跨日） --------------------
         with tab_add:
             st.subheader("填寫賽事資訊 Add Event Details")
             with st.form("add_comp_form"):
-                comp_name = st.text_input("賽事名稱 Competition Name (例: 115年全國中等學校運動會)")
+                comp_name = st.text_input("賽事名稱 Competition Name (例: 全國中等學校運動會)")
                 
                 c_d1, c_d2 = st.columns(2)
                 with c_d1:
@@ -2699,14 +2703,20 @@ elif page == "比賽行事曆 Competition Calendar":
                         st.success(f"已成功新增賽事【{comp_name}】至行事曆！")
                         st.rerun()
 
-        # -------------------- 3. 賽事清單列表與刪除管理 --------------------
+        # -------------------- 3. 賽事清單列表與刪除 --------------------
         with tab_list:
             st.subheader("所有賽事紀錄 All Events")
             if not competitions:
                 st.caption("尚無賽事日程紀錄 No Competition Records Found")
             else:
                 for comp in competitions:
-                    c_id, c_user, c_name, c_start_str, c_end_str, c_loc, c_notes, _ = comp
+                    # 相容性處理解包
+                    if len(comp) >= 8:
+                        c_id, c_user, c_name, c_start_str, c_end_str, c_loc, c_notes, _ = comp[:8]
+                    else:
+                        c_id, c_user, c_name, c_start_str, c_loc, c_notes, _ = comp[:7]
+                        c_end_str = c_start_str
+
                     c_end_str = c_end_str if c_end_str else c_start_str
                     
                     try:
