@@ -155,6 +155,25 @@ def init_db():
     c.close()
     conn.close()
 
+def save_competition(username, comp_name, start_date, end_date=None, location="", notes=""):
+    """儲存賽事日程（支援 5 個或 6 個參數傳入，防止 TypeError）"""
+    if end_date is None or end_date == "":
+        end_date = start_date
+
+    conn = get_db_connection()
+    c = conn.cursor()
+    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    c.execute(
+        "INSERT INTO competitions (username, comp_name, comp_date, end_date, location, notes, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+        (username, comp_name, str(start_date), str(end_date), str(location), str(notes), now_str)
+    )
+    conn.commit()
+    c.close()
+    conn.close()
+
+def db_save_competition(username, comp_name, start_date, end_date=None, location="", notes=""):
+    save_competition(username, comp_name, start_date, end_date, location, notes)
+
 def get_competitions(username=None):
     """讀取比賽紀錄（確保包含 end_date 欄位）"""
     conn = get_db_connection()
@@ -179,39 +198,7 @@ def delete_competition(comp_id):
     c.close()
     conn.close()
 
-def save_competition(*args, **kwargs):
-    """
-    全相容性賽事儲存函數
-    能自動判斷並接收 5 個或 6 個位置參數，徹底解決 TypeError 覆蓋問題
-    """
-    conn = get_db_connection()
-    c = conn.cursor()
-    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    # 動態解析傳入參數數量
-    if len(args) == 6:
-        username, comp_name, start_date, end_date, location, notes = args
-    elif len(args) == 5:
-        username, comp_name, start_date, location, notes = args
-        end_date = start_date
-    else:
-        username = kwargs.get("username", args[0] if len(args) > 0 else "")
-        comp_name = kwargs.get("comp_name", args[1] if len(args) > 1 else "")
-        start_date = kwargs.get("start_date", kwargs.get("comp_date", args[2] if len(args) > 2 else ""))
-        end_date = kwargs.get("end_date", args[3] if len(args) > 3 else start_date)
-        location = kwargs.get("location", args[4] if len(args) > 4 else "")
-        notes = kwargs.get("notes", args[5] if len(args) > 5 else "")
-
-    if not end_date:
-        end_date = start_date
-
-    c.execute(
-        "INSERT INTO competitions (username, comp_name, comp_date, end_date, location, notes, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-        (username, comp_name, str(start_date), str(end_date), str(location), str(notes), now_str)
-    )
-    conn.commit()
-    c.close()
-    conn.close()# -------------------- 【伺服器端手機影片自動轉碼處理】 --------------------
+# -------------------- 【伺服器端手機影片自動轉碼處理】 --------------------
 def process_and_convert_video(uploaded_file):
     """將 iPhone (.MOV / H.265) 或手機影片自動透過 FFmpeg 轉碼為網頁通用 H.264 MP4"""
     if uploaded_file is None:
@@ -312,6 +299,7 @@ def update_username(old_username, new_username):
         c.execute("UPDATE records SET username = %s WHERE username = %s", (new_username, old_username))
         c.execute("UPDATE training_plans SET username = %s WHERE username = %s", (new_username, old_username))
         c.execute("UPDATE reset_tokens SET username = %s WHERE username = %s", (new_username, old_username))
+        c.execute("UPDATE competitions SET username = %s WHERE username = %s", (new_username, old_username))
         conn.commit()
         c.close()
         conn.close()
@@ -480,6 +468,7 @@ def update_record_details(record_id, updated_details_dict):
     conn.commit()
     c.close()
     conn.close()
+
 def save_training_plan(username, plan_date, category, content, intensity, notes):
     conn = get_db_connection()
     c = conn.cursor()
@@ -521,38 +510,6 @@ except Exception as e:
 if "user_info" not in st.session_state:
     st.session_state["user_info"] = None
 
-def save_competition(username, comp_name, comp_date, location, notes):
-    conn = get_db_connection()
-    c = conn.cursor()
-    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    c.execute("INSERT INTO competitions (username, comp_name, comp_date, location, notes, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
-              (username, comp_name, str(comp_date), location, notes, now_str))
-    conn.commit()
-    c.close()
-    conn.close()
-
-def get_competitions(username=None):
-    conn = get_db_connection()
-    c = conn.cursor()
-    query = "SELECT id, username, comp_name, comp_date, end_date, location, notes, created_at FROM competitions"
-    params = []
-    if username:
-        query += " WHERE username = %s"
-        params.append(username)
-    query += " ORDER BY comp_date ASC"
-    c.execute(query, tuple(params))
-    rows = c.fetchall()
-    c.close()
-    conn.close()
-    return rows
-    
-def delete_competition(comp_id):
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute("DELETE FROM competitions WHERE id = %s", (comp_id,))
-    conn.commit()
-    c.close()
-    conn.close()
 # -------------------- 【側邊欄：導覽選單】 --------------------
 st.sidebar.title("HURDEX")
 st.sidebar.markdown("---")
@@ -2772,6 +2729,7 @@ elif page == "比賽行事曆 Competition Calendar":
                                 delete_competition(c_id)
                                 st.success("賽事已成功刪除/取消！")
                                 st.rerun()
+
 # ==================== 【頁面 8：未來擴充規劃】 ====================
 elif page == "未來擴充規劃 Future Roadmap":
     st.title("未來擴充規劃 Future Roadmap")
