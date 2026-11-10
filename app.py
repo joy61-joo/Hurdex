@@ -1611,7 +1611,8 @@ elif page == "雙影同步 Dual Video Sync":
                         save_record(u["username"], u["team_code"], "雙影同步 Dual Video Sync", rec_title_dual, {
                             "image_b64": captured_dual_img, "sync_data": json.loads(captured_dual_json), "saved_at": str(datetime.datetime.now())
                         })
-                        st.success("儲存成功！")# ==================== 【頁面 7：跨期數據對比 (已完全移除日期與時間，僅顯示紀錄標題)】 ====================
+                        st.success("儲存成功！")
+# ==================== 【頁面 7：跨期數據對比 (已刪除預設推薦標示文字)】 ====================
 elif page == "跨期數據對比 Longitudinal Comparison":
     st.title("跨期數據對比分析 Longitudinal Comparison Analysis")
     st.markdown("---")
@@ -1636,20 +1637,29 @@ elif page == "跨期數據對比 Longitudinal Comparison":
             if not records:
                 st.warning(f"選手 {target_user} 在團隊中尚無 {mod_choice} 的歷史紀錄。")
             else:
-                # 【完全移除日期】：僅顯示紀錄標題
-                rec_options = {f"ID:{r[0]} ｜ {r[3]}": r for r in records}
+                # 【完全隱藏 ID】：純粹顯示紀錄標題 (若有同名自動加上次數標記如: 標題 (2))
+                title_counts = {}
+                rec_options = {}
+                for r in records:
+                    t = r[3]
+                    if t in title_counts:
+                        title_counts[t] += 1
+                        disp_key = f"{t} ({title_counts[t]})"
+                    else:
+                        title_counts[t] = 1
+                        disp_key = t
+                    rec_options[disp_key] = r
 
                 selected_keys = st.multiselect("請選擇 2 至 5 筆紀錄進行對照：", list(rec_options.keys()))
 
                 if len(selected_keys) >= 2:
                     st.markdown("---")
                     st.subheader("多日數據對比明細")
-                    selected_recs = sorted([rec_options[k] for k in selected_keys], key=lambda x: x[0])
 
                     if mod_choice == "欄間秒數及速度計算 Hurdle Time & Speed Calculation":
                         chart_metric = st.radio(
                             "選擇折線圖展示指標：", 
-                            ["分段平均速度 (m/s) [預設推薦：數字越高越好，速降趨勢極清晰]", "單段耗時 (0.01秒 / 百分秒)", "單段耗時 (秒 s)"], 
+                            ["分段平均速度 (m/s)", "單段耗時 (0.01秒 / 百分秒)", "單段耗時 (秒 s)"], 
                             horizontal=True
                         )
 
@@ -1661,11 +1671,11 @@ elif page == "跨期數據對比 Longitudinal Comparison":
 
                         plot_dict = {}
                         table_data = {}
-                        for rec in selected_recs:
+                        for k in selected_keys:
+                            rec = rec_options[k]
                             tm = json.loads(rec[4]).get("timer_metrics", {})
                             splits = tm.get("splits", [])
-                            # 圖例與欄位僅使用標題名稱 (附加 ID 避免同名衝突)
-                            rec_label = f"{rec[3]} (ID:{rec[0]})"
+                            rec_label = k  # 純標題名稱（如：全田、暑假、秋季盃）
 
                             for idx, s in enumerate(splits):
                                 # 以打點順序 (0~10) 對應標準名稱
@@ -1723,9 +1733,10 @@ elif page == "跨期數據對比 Longitudinal Comparison":
 
                     elif mod_choice == "關鍵影格角度量測 Keyframe Angle Measurement":
                         plot_dict_angle = {}
-                        for rec in selected_recs:
+                        for k in selected_keys:
+                            rec = rec_options[k]
                             am = json.loads(rec[4]).get("angle_metrics", {})
-                            rec_label = f"{rec[3]} (ID:{rec[0]})"
+                            rec_label = k
                             angles = am.get("angles", []) if isinstance(am, dict) else am
                             if isinstance(angles, list):
                                 for a in angles:
@@ -1741,8 +1752,9 @@ elif page == "跨期數據對比 Longitudinal Comparison":
                             st.line_chart(pd.DataFrame.from_dict(plot_dict_angle, orient='index'))
 
                         st.markdown("##### 跨期畫面與角度數據明細 Comparison Cards")
-                        col_arr = st.columns(len(selected_recs))
-                        for idx, rec in enumerate(selected_recs):
+                        col_arr = st.columns(len(selected_keys))
+                        for idx, k in enumerate(selected_keys):
+                            rec = rec_options[k]
                             details = json.loads(rec[4])
                             with col_arr[idx]:
                                 st.markdown(f"**紀錄標題：{rec[3]}**")
@@ -1753,9 +1765,7 @@ elif page == "跨期數據對比 Longitudinal Comparison":
                                 st.write(f"時間：`{am.get('rel_time_sec', '0.00')} 秒`")
                                 st.write(f"階段：`{am.get('phase_tag', '關鍵點')}`")
                                 if isinstance(angles, list):
-                                    for a in angles: st.write(f"• {a.get('name')}：`{a.get('value')}`")
-# ==================== 【頁面 8：課表紀錄】 ====================
-elif page == "課表紀錄 Training Plan":
+                                    for a in angles: st.write(f"• {a.get('name')}：`{a.get('value')}`")elif page == "課表紀錄 Training Plan":
     st.title("課表與訓練日誌紀錄 Training Plan & Daily Log")
     st.markdown("---")
 
