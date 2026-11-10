@@ -664,68 +664,109 @@ if page == "系統首頁 Home":
             if st.button("登出系統 Logout", key="main_logout_btn", use_container_width=True):
                 st.session_state["user_info"] = None
                 st.rerun()
-
-# ==================== 【頁面 2：運動防護與傷勢評估】 ====================
-elif page == "運動防護與傷勢評估 Injury & Defense Feedback":
-    st.title("🏥 運動防護與傷勢評估 Injury & Defense Feedback")
+# ==================== 【頁面 2：運動防護與傷病評估】 ====================
+elif page == "運動防護與傷病評估 Injury & Defense Feedback":
+    st.title("🩺 運動防護與傷病登錄評估")
     st.markdown("---")
 
     if st.session_state["user_info"] is None:
-        st.warning("請先在左側邊欄登入帳號")
+        st.warning("請先登入帳號")
     else:
         u = st.session_state["user_info"]
         team_code = u["team_code"]
         role = u["role"]
 
-        if role == "trainer":
-            st.subheader("📝 發布選手傷勢防護評估報告 (防護員專屬)")
-            team_athletes = get_team_athletes(team_code)
-            if not team_athletes:
-                st.warning(f"當前團隊 (`{team_code}`) 尚無選手。")
+        tab_injury_log, tab_injury_records = st.tabs([
+            "📝 每日傷病與疼痛登錄",
+            "📋 團隊防護紀錄總覽"
+        ])
+
+        # ------------------ 分頁 1：傷病與疼痛登錄表單 ------------------
+        with tab_injury_log:
+            st.subheader("填寫今日身體狀況與傷病標記")
+            
+            with st.form("form_injury_log"):
+                col_i1, col_i2 = st.columns(2)
+                with col_i1:
+                    body_part = st.selectbox(
+                        "傷病 / 痛點部位：",
+                        ["大腿後肌群 (Hamstring)", "髖屈肌 (Hip Flexor)", "阿基里斯腱 (Achilles)", 
+                         "膝關節 / 髕骨肌腱", "小腿肌群", "踝關節", "腰椎 / 背部", "股四頭肌", "其他部位"]
+                    )
+                with col_i2:
+                    leg_side = st.radio(
+                        "受力腳位標記：",
+                        ["起跨腳 (Lead Leg)", "擺動腳 (Trail Leg)", "雙側皆有", "不分腳位"],
+                        horizontal=True
+                    )
+
+                st.markdown("---")
+                
+                # 疼痛等級 VAS
+                pain_level = st.slider("疼痛等級 (VAS 指標 1-10 分)：", min_value=1, max_value=10, value=3,
+                                       help="1-3輕微酸痛 / 4-6中度疼痛影響訓練 / 7-10劇痛無法訓練")
+                
+                # 13 項標準化疼痛性質多選選單
+                pain_nature_options = [
+                    "延遲性酸痛 (DOMS)", "肌肉緊繃/僵硬", "拉扯痛/牽扯感", "撕裂痛",
+                    "銳痛/刺痛", "鈍痛/深層隱痛", "關節卡痛/摩擦感", "按壓痛",
+                    "腫脹壓迫痛", "灼熱感/發炎痛", "脈動痛/跳痛",
+                    "麻木感/麻痛", "放射痛/電擊感"
+                ]
+                selected_pain_types = st.multiselect(
+                    "請選擇疼痛性質（可多選）：",
+                    options=pain_nature_options,
+                    default=["肌肉緊繃/僵硬"]
+                )
+
+                st.markdown("---")
+                treatment_needed = st.checkbox("需要防護員介入處置 / 安排冰敷防護貼紮")
+                injury_notes = st.text_area("詳細描述與備註（如：過第 5 欄時起跨拉到、訓練後持續發熱...）")
+
+                if st.form_submit_button(" Submit 儲存防護紀錄", use_container_width=True):
+                    if selected_pain_types:
+                        log_data = {
+                            "body_part": body_part,
+                            "leg_side": leg_side,
+                            "pain_level": pain_level,
+                            "pain_types": selected_pain_types,
+                            "treatment_needed": treatment_needed,
+                            "notes": injury_notes.strip(),
+                            "logged_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+                        }
+                        # 儲存至團隊數據庫
+                        save_record(u["username"], team_code, "運動防護與傷病評估", f"傷病紀錄-{body_part}", log_data)
+                        st.success("防護紀錄已成功儲存！")
+                        st.rerun()
+                    else:
+                        st.warning("請至少勾選一項疼痛性質")
+
+        # ------------------ 分頁 2：團隊防護紀錄總覽 ------------------
+        with tab_injury_records:
+            st.subheader("📋 傷病歷史與防護日誌")
+            records = get_records(team_code, category="運動防護與傷病評估")
+            
+            if records:
+                for rec in records:
+                    r_id, r_user, r_cat, r_title, r_content_str, r_time = rec[0], rec[1], rec[2], rec[3], rec[4], rec[5]
+                    try:
+                        data = json.loads(r_content_str) if isinstance(r_content_str, str) else r_content_str
+                        pain_lvl = data.get("pain_level", 0)
+                        
+                        # 疼痛警告燈號
+                        tag_color = "🟢" if pain_lvl <= 3 else ("🟡" if pain_lvl <= 6 else "🔴")
+                        
+                        with st.expander(f"{tag_color} {r_time[:10]} ｜ {r_user} - {data.get('body_part')} (疼痛等級: {pain_lvl}分)"):
+                            st.write(f"• **受力腳位**：{data.get('leg_side')}")
+                            st.write(f"• **疼痛性質**：{', '.join(data.get('pain_types', []))}")
+                            st.write(f"• **防護員需求**：{'⚠️ 需要防護介入' if data.get('treatment_needed') else '尚不需要'}")
+                            if data.get("notes"):
+                                st.write(f"• **備註描述**：\n```text\n{data.get('notes')}\n```")
+                    except Exception:
+                        pass
             else:
-                with st.form("trainer_feedback_form"):
-                    c1, c2, c3 = st.columns(3)
-                    with c1: target_athlete = st.selectbox("選擇評估選手", team_athletes)
-                    with c2: fb_date = st.date_input("評估日期", value=datetime.date.today())
-                    with c3: status_tag = st.selectbox("傷勢狀態標籤", ["🟢 正常/可全量訓練", "🟡 觀察中/降低載量", "🔴 停止專項/復健中", "🔵 術後/專屬防護期"])
-                    body_part = st.text_input("關注/受傷部位 (例: 右腳膝蓋髕骨下緣 / 左大腿膕繩肌)")
-                    advice = st.text_area("防護建議與處置指引 (包含冰敷熱敷、貼紮需求、訓練量減半建議等)", height=120)
-
-                    if st.form_submit_button("發布防護評估報告", use_container_width=True):
-                        if body_part.strip() and advice.strip():
-                            save_injury_feedback(target_athlete, u["username"], team_code, fb_date, body_part, status_tag, advice)
-                            st.success(f"已成功給予選手 {target_athlete} 傷勢評估報告！")
-                            st.rerun()
-                        else: st.warning("請填寫關注部位與建議內容")
-            st.markdown("---")
-
-        st.subheader(f"📋 團隊傷勢防護評估紀錄 (團隊：{team_code})")
-        if role == "player":
-            feedbacks = get_injury_feedbacks(team_code, athlete_username=u["username"])
-            st.caption(f"提示：以下僅顯示給予選手 **{u['username']}** 的個人防護報告。")
-        elif role in ["coach", "trainer"]:
-            team_athletes = get_team_athletes(team_code)
-            col_f1, _ = st.columns([1, 2])
-            with col_f1: sel_ath_filter = st.selectbox("篩選選手報告", ["全團隊選手"] + team_athletes)
-            filter_name = None if sel_ath_filter == "全團隊選手" else sel_ath_filter
-            feedbacks = get_injury_feedbacks(team_code, athlete_username=filter_name)
-
-        if not feedbacks:
-            st.info("目前尚無防護評估報告。")
-        else:
-            for fb in feedbacks:
-                fb_id, ath_name, trn_name, fb_date, b_part, status, adv, created_at = fb
-                with st.expander(f"📅 {fb_date} ｜ 選手: {ath_name} ｜ {status} ｜ 部位: {b_part}"):
-                    st.write(f"• **評估防護員**：{trn_name}")
-                    st.write(f"• **評估日期**：{fb_date}")
-                    st.write(f"• **關注/受傷部位**：{b_part}")
-                    st.write(f"• **狀態評級**：{status}")
-                    st.markdown(f"**防護與處置建議：**\n```text\n{adv}\n```")
-                    st.caption(f"建立時間: {created_at}")
-                    if role in ["trainer", "coach"]:
-                        if st.button(f"🗑️ 刪除這筆防護評估 ID {fb_id}", key=f"del_fb_{fb_id}"):
-                            delete_injury_feedback(fb_id)
-                            st.rerun()# ==================== 【頁面 3：比賽行事曆 (賽事總覽依日期由近到遠排序)】 ====================
+                st.info("目前尚無傷病紀錄")
+# ==================== 【頁面 3：比賽行事曆 (賽事總覽依日期由近到遠排序)】 ====================
 elif page == "比賽行事曆 Competition Calendar":
     st.title("🏆 團隊比賽行事曆與賽事倒數")
     st.markdown("---")
