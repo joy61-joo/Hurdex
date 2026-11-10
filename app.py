@@ -348,7 +348,19 @@ def delete_competition(comp_id):
     c.execute("DELETE FROM competitions WHERE id = %s", (comp_id,))
     conn.commit()
     c.close(); conn.close()
-
+    
+def update_competition(comp_id, name, start_date, end_date, notes):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE competitions 
+        SET name = %s, start_date = %s, end_date = %s, notes = %s
+        WHERE id = %s
+    """, (name, str(start_date), str(end_date), notes, comp_id))
+    conn.commit()
+    cur.close()
+    conn.close()
+    
 def save_record(username, team_code, module, title, details_dict):
     conn = get_db_connection()
     c = conn.cursor()
@@ -703,7 +715,7 @@ elif page == "運動防護與傷勢評估 Injury & Defense Feedback":
                         if st.button(f"🗑️ 刪除這筆防護評估 ID {fb_id}", key=f"del_fb_{fb_id}"):
                             delete_injury_feedback(fb_id)
                             st.rerun()
-# ==================== 【頁面 3：比賽行事曆 (選手隱藏姓名備註 & 月份改為加減按鈕)】 ====================
+# ==================== 【頁面 3：比賽行事曆 (已加入「編輯賽事與備註」功能)】 ====================
 elif page == "比賽行事曆 Competition Calendar":
     st.title("🏆 團隊比賽行事曆與賽事倒數")
     st.markdown("---")
@@ -751,7 +763,6 @@ elif page == "比賽行事曆 Competition Calendar":
             for idx, item in enumerate(active_and_upcoming[:3]):
                 with cols[idx % 3]:
                     date_disp = item["start_str"] if item["start_str"] == item["end_str"] else f"{item['start_str']} ~ {item['end_str']}"
-                    # 判斷是否為教練/防護員，非教練防護員則隱藏使用者姓名備註
                     user_suffix = f" ({item['user']})" if role in ["coach", "trainer"] else ""
 
                     if item["is_active"]:
@@ -783,7 +794,6 @@ elif page == "比賽行事曆 Competition Calendar":
             with c_y:
                 sel_year = st.number_input("選擇年份 Year", min_value=2024, max_value=2030, value=int(today.year), step=1, key="cal_sel_year")
             with c_m:
-                # 已改為 number_input 加減按鈕控制月份 (1~12月)
                 sel_month = st.number_input("選擇月份 Month", min_value=1, max_value=12, value=int(today.month), step=1, key="cal_sel_month")
 
             cal_matrix = calendar.monthcalendar(int(sel_year), int(sel_month))
@@ -862,20 +872,54 @@ elif page == "比賽行事曆 Competition Calendar":
                     else:
                         st.warning("請輸入賽事名稱")
 
-        # ------------------ 分頁 3：賽事總覽清單 ------------------
+        # ------------------ 分頁 3：賽事總覽清單 (支援編輯備註與名稱) ------------------
         with tab_list_comp:
             for comp in competitions:
                 c_id, c_user, c_name, c_start_str, c_end_str = comp[0], comp[1], comp[2], comp[3], comp[4]
                 c_notes = comp[6] if len(comp) > 6 else ""
                 date_range = c_start_str if c_start_str == c_end_str else f"{c_start_str} 至 {c_end_str}"
                 creator_info = f" (建立者: {c_user})" if role in ["coach", "trainer"] else ""
+                
                 with st.expander(f"{date_range} ｜ {c_name}{creator_info}"):
                     if c_notes:
                         st.write(f"• **賽事備註**：\n```text\n{c_notes}\n```")
+                    else:
+                        st.write("• **賽事備註**：尚未填寫備註")
+
                     if role in ["coach", "trainer"] or c_user == u["username"]:
-                        if st.button(f"🗑️ 刪除賽事 ID {c_id}", key=f"del_comp_{c_id}"):
-                            delete_competition(c_id)
-                            st.rerun()
+                        col_edit, col_del = st.columns([1, 1])
+                        
+                        # 編輯彈出視窗
+                        with col_edit:
+                            with st.popover("✏️ 編輯賽事與備註"):
+                                with st.form(f"edit_comp_form_{c_id}"):
+                                    st.subheader("編輯賽事資料")
+                                    edit_name = st.text_input("賽事名稱", value=c_name)
+                                    
+                                    try:
+                                        s_dt_val = datetime.datetime.strptime(c_start_str, "%Y-%m-%d").date()
+                                        e_dt_val = datetime.datetime.strptime(c_end_str, "%Y-%m-%d").date() if c_end_str else s_dt_val
+                                    except Exception:
+                                        s_dt_val, e_dt_val = today, today
+
+                                    ec1, ec2 = st.columns(2)
+                                    with ec1: edit_start = st.date_input("開始日期", value=s_dt_val, key=f"es_{c_id}")
+                                    with ec2: edit_end = st.date_input("結束日期", value=e_dt_val, key=f"ee_{c_id}")
+                                    
+                                    edit_notes = st.text_area("賽事目標與備註", value=c_notes, key=f"en_{c_id}")
+                                    
+                                    if st.form_submit_button("儲存修改", use_container_width=True):
+                                        if edit_name.strip():
+                                            update_competition(c_id, edit_name.strip(), edit_start, edit_end, edit_notes.strip())
+                                            st.success("賽事修改成功！")
+                                            st.rerun()
+                                        else:
+                                            st.warning("請輸入賽事名稱")
+
+                        with col_del:
+                            if st.button(f"🗑️ 刪除賽事", key=f"del_comp_{c_id}"):
+                                delete_competition(c_id)
+                                st.rerun()
 
 # ==================== 【頁面 4：角度分析】 ====================
 elif page == "角度分析 Angle Analysis":
