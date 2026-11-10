@@ -1610,7 +1610,9 @@ elif page == "雙影同步 Dual Video Sync":
                         save_record(u["username"], u["team_code"], "雙影同步 Dual Video Sync", rec_title_dual, {
                             "image_b64": captured_dual_img, "sync_data": json.loads(captured_dual_json), "saved_at": str(datetime.datetime.now())
                         })
-                        st.success("儲存成功！")# ==================== 【頁面 7：跨期數據對比 (明確標記「段落 01~11」，最後一段為 H10->終點)】 ====================
+                        st.success("儲存成功！")
+import altair as alt
+# ==================== 【頁面 7：跨期數據對比 (使用 Altair 完美指定自訂 X 軸順序)】 ====================
 elif page == "跨期數據對比 Longitudinal Comparison":
     st.title("跨期數據對比分析 Longitudinal Comparison Analysis")
     st.markdown("---")
@@ -1650,32 +1652,11 @@ elif page == "跨期數據對比 Longitudinal Comparison":
                             horizontal=True
                         )
 
-                        # 【標準 11 個計時區段】：前綴明確標示「段落序號」，最後一段為第10欄至終點
+                        # 【乾淨的純文字標籤】：完全不需要數字編號前綴
                         ORDERED_SEGMENTS = [
-                            "[段落01] 起跑->H1",
-                            "[段落02] H1->H2",
-                            "[段落03] H2->H3",
-                            "[段落04] H3->H4",
-                            "[段落05] H4->H5",
-                            "[段落06] H5->H6",
-                            "[段落07] H6->H7",
-                            "[段落08] H7->H8",
-                            "[段落09] H8->H9",
-                            "[段落10] H9->H10",
-                            "[段落11] H10->終點"
+                            "起跑->H1", "H1->H2", "H2->H3", "H3->H4", "H4->H5",
+                            "H5->H6", "H6->H7", "H7->H8", "H8->H9", "H9->H10", "H10->終點"
                         ]
-
-                        # 資料格式相容清洗：將舊紀錄與新紀錄統一映射至標準段落標籤
-                        def normalize_segment_name(raw_seg):
-                            if not raw_seg: return "[段落01] 起跑->H1"
-                            s = str(raw_seg).strip()
-                            for seg in ORDERED_SEGMENTS:
-                                core = seg.split("] ")[-1]
-                                if s == seg or s == core:
-                                    return seg
-                            if "起跑" in s or ("H1" in s and "起" in s): return "[段落01] 起跑->H1"
-                            if "H10" in s and "終點" in s: return "[段落11] H10->終點"
-                            return s
 
                         plot_dict = {}
                         table_data = {}
@@ -1686,7 +1667,9 @@ elif page == "跨期數據對比 Longitudinal Comparison":
 
                             for s in splits:
                                 raw_seg = s.get("segment", "")
-                                seg = normalize_segment_name(raw_seg)
+                                # 清洗帶有舊前綴的標籤
+                                seg = raw_seg.replace("01. ", "").replace("02. ", "").replace("03. ", "").replace("04. ", "").replace("05. ", "").replace("06. ", "").replace("07. ", "").replace("08. ", "").replace("09. ", "").replace("10. ", "").replace("11. ", "").replace("[段落", "").replace("] ", "")
+                                if "段落" in seg: seg = seg.split(" ")["-1"]
 
                                 try: split_sec = float(s.get("split_sec", "0"))
                                 except ValueError: split_sec = 0.0
@@ -1711,12 +1694,24 @@ elif page == "跨期數據對比 Longitudinal Comparison":
                         if plot_dict:
                             df_plot = pd.DataFrame.from_dict(plot_dict, orient='index')
                             
-                            # 強制將 X 軸標籤依照「[段落01] 起跑->H1」到「[段落11] H10->終點」嚴格排序
+                            # 重排 Index
                             existing_indices = df_plot.index.tolist()
                             sorted_index = [seg for seg in ORDERED_SEGMENTS if seg in existing_indices] + [seg for seg in existing_indices if seg not in ORDERED_SEGMENTS]
                             df_plot = df_plot.reindex(sorted_index)
 
-                            st.line_chart(df_plot)
+                            # 轉換 DataFrame 結構以配合 Altair
+                            df_alt = df_plot.reset_index().rename(columns={'index': 'Segment'})
+                            df_melt = df_alt.melt(id_vars=['Segment'], var_name='紀錄 Date/Title', value_name=f'數值 ({unit_label})')
+
+                            # 【關鍵重點】：使用 Altair 的 sort=ORDERED_SEGMENTS 強制 X 軸依指定文字順序排列
+                            chart = alt.Chart(df_melt).mark_line(point=True).encode(
+                                x=alt.X('Segment:N', sort=ORDERED_SEGMENTS, title="比賽分段 Segment"),
+                                y=alt.Y(f'數值 ({unit_label}):Q', title=f"數值 ({unit_label})"),
+                                color='紀錄 Date/Title:N',
+                                tooltip=['Segment', '紀錄 Date/Title', f'數值 ({unit_label})']
+                            ).properties(height=420)
+
+                            st.altair_chart(chart, use_container_width=True)
 
                         st.markdown("##### 各段落耗時與平均速度對照表")
                         if table_data:
@@ -1725,42 +1720,6 @@ elif page == "跨期數據對比 Longitudinal Comparison":
                             sorted_table_index = [seg for seg in ORDERED_SEGMENTS if seg in existing_table_indices] + [seg for seg in existing_table_indices if seg not in ORDERED_SEGMENTS]
                             df_table = df_table.reindex(sorted_table_index)
                             st.dataframe(df_table, use_container_width=True)
-
-                    elif mod_choice == "關鍵影格角度量測 Keyframe Angle Measurement":
-                        plot_dict_angle = {}
-                        for rec in selected_recs:
-                            am = json.loads(rec[4]).get("angle_metrics", {})
-                            rec_label = f"{rec[5]} ({rec[3]})"
-                            angles = am.get("angles", []) if isinstance(am, dict) else am
-                            if isinstance(angles, list):
-                                for a in angles:
-                                    name = a.get("name", "未知名稱")
-                                    val_str = str(a.get("value", "0")).replace("°", "").strip()
-                                    try: val = float(val_str)
-                                    except ValueError: val = 0.0
-                                    if rec_label not in plot_dict_angle: plot_dict_angle[rec_label] = {}
-                                    plot_dict_angle[rec_label][name] = val
-
-                        st.markdown("##### 跨期角度變化趨勢折線圖 Angle Progression Line Chart")
-                        if plot_dict_angle:
-                            st.line_chart(pd.DataFrame.from_dict(plot_dict_angle, orient='index'))
-
-                        st.markdown("##### 跨期畫面與角度數據明細 Comparison Cards")
-                        col_arr = st.columns(len(selected_recs))
-                        for idx, rec in enumerate(selected_recs):
-                            details = json.loads(rec[4])
-                            with col_arr[idx]:
-                                st.markdown(f"**日期：{rec[5]}**")
-                                st.write(f"標題：{rec[3]}")
-                                if "image_b64" in details:
-                                    st.image(details["image_b64"], use_container_width=True)
-                                am = details.get("angle_metrics", {})
-                                angles = am.get("angles", []) if isinstance(am, dict) else am
-                                st.write(f"時間：`{am.get('rel_time_sec', '0.00')} 秒`")
-                                st.write(f"階段：`{am.get('phase_tag', '關鍵點')}`")
-                                if isinstance(angles, list):
-                                    for a in angles: st.write(f"• {a.get('name')}：`{a.get('value')}`")
-
 # ==================== 【頁面 8：課表紀錄】 ====================
 elif page == "課表紀錄 Training Plan":
     st.title("課表與訓練日誌紀錄 Training Plan & Daily Log")
