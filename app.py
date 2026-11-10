@@ -1611,9 +1611,7 @@ elif page == "雙影同步 Dual Video Sync":
                         save_record(u["username"], u["team_code"], "雙影同步 Dual Video Sync", rec_title_dual, {
                             "image_b64": captured_dual_img, "sync_data": json.loads(captured_dual_json), "saved_at": str(datetime.datetime.now())
                         })
-                        st.success("儲存成功！")
-
-# ==================== 【頁面 7：跨期數據對比 (Altair 自訂 X 軸時序)】 ====================
+                        st.success("儲存成功！")# ==================== 【頁面 7：跨期數據對比 (已完全移除日期與時間，僅顯示紀錄標題)】 ====================
 elif page == "跨期數據對比 Longitudinal Comparison":
     st.title("跨期數據對比分析 Longitudinal Comparison Analysis")
     st.markdown("---")
@@ -1638,13 +1636,15 @@ elif page == "跨期數據對比 Longitudinal Comparison":
             if not records:
                 st.warning(f"選手 {target_user} 在團隊中尚無 {mod_choice} 的歷史紀錄。")
             else:
-                rec_options = {f"ID:{r[0]} ｜ 標題:{r[3]} ｜ 時間:{r[5]}": r for r in records}
+                # 【完全移除日期】：僅顯示紀錄標題
+                rec_options = {f"ID:{r[0]} ｜ {r[3]}": r for r in records}
+
                 selected_keys = st.multiselect("請選擇 2 至 5 筆紀錄進行對照：", list(rec_options.keys()))
 
                 if len(selected_keys) >= 2:
                     st.markdown("---")
                     st.subheader("多日數據對比明細")
-                    selected_recs = sorted([rec_options[k] for k in selected_keys], key=lambda x: x[5])
+                    selected_recs = sorted([rec_options[k] for k in selected_keys], key=lambda x: x[0])
 
                     if mod_choice == "欄間秒數及速度計算 Hurdle Time & Speed Calculation":
                         chart_metric = st.radio(
@@ -1653,31 +1653,26 @@ elif page == "跨期數據對比 Longitudinal Comparison":
                             horizontal=True
                         )
 
-                        # 【標準欄間純文字時序】：從起跑至終點共 11 個區段
+                        # 【標準 11 個比賽區段】：純文字標籤，最後一段為 H10->終點
                         ORDERED_SEGMENTS = [
                             "起跑->H1", "H1->H2", "H2->H3", "H3->H4", "H4->H5",
                             "H5->H6", "H6->H7", "H7->H8", "H8->H9", "H9->H10", "H10->終點"
                         ]
-
-                        # 舊資料標籤清洗（自動移除歷史舊前綴）
-                        def clean_seg_label(raw_seg):
-                            if not raw_seg: return "起跑->H1"
-                            s = str(raw_seg).strip()
-                            for prefix in ["01. ", "02. ", "03. ", "04. ", "05. ", "06. ", "07. ", "08. ", "09. ", "10. ", "11. "]:
-                                if s.startswith(prefix): s = s[len(prefix):]
-                            if "] " in s: s = s.split("] ")[-1]
-                            return s
 
                         plot_dict = {}
                         table_data = {}
                         for rec in selected_recs:
                             tm = json.loads(rec[4]).get("timer_metrics", {})
                             splits = tm.get("splits", [])
-                            rec_label = f"{rec[5]} ({rec[3]})"
+                            # 圖例與欄位僅使用標題名稱 (附加 ID 避免同名衝突)
+                            rec_label = f"{rec[3]} (ID:{rec[0]})"
 
-                            for s in splits:
-                                raw_seg = s.get("segment", "")
-                                seg = clean_seg_label(raw_seg)
+                            for idx, s in enumerate(splits):
+                                # 以打點順序 (0~10) 對應標準名稱
+                                if idx < len(ORDERED_SEGMENTS):
+                                    seg = ORDERED_SEGMENTS[idx]
+                                else:
+                                    seg = s.get("segment", f"段落{idx+1}")
 
                                 try: split_sec = float(s.get("split_sec", "0"))
                                 except ValueError: split_sec = 0.0
@@ -1702,21 +1697,18 @@ elif page == "跨期數據對比 Longitudinal Comparison":
                         if plot_dict:
                             df_plot = pd.DataFrame.from_dict(plot_dict, orient='index')
                             
-                            # 依比賽時序重排 Index
                             existing_indices = df_plot.index.tolist()
                             sorted_index = [seg for seg in ORDERED_SEGMENTS if seg in existing_indices] + [seg for seg in existing_indices if seg not in ORDERED_SEGMENTS]
                             df_plot = df_plot.reindex(sorted_index)
 
-                            # 轉換為 Altair 格式
                             df_alt = df_plot.reset_index().rename(columns={'index': 'Segment'})
-                            df_melt = df_alt.melt(id_vars=['Segment'], var_name='紀錄 Date/Title', value_name=f'數值 ({unit_label})')
+                            df_melt = df_alt.melt(id_vars=['Segment'], var_name='紀錄 Title', value_name=f'數值 ({unit_label})')
 
-                            # Altair 圖表設定：透過 sort=ORDERED_SEGMENTS 強制設定 X 軸順序
                             chart = alt.Chart(df_melt).mark_line(point=True).encode(
                                 x=alt.X('Segment:N', sort=ORDERED_SEGMENTS, title="比賽分段 Segment"),
                                 y=alt.Y(f'數值 ({unit_label}):Q', title=f"數值 ({unit_label})"),
-                                color='紀錄 Date/Title:N',
-                                tooltip=['Segment', '紀錄 Date/Title', f'數值 ({unit_label})']
+                                color='紀錄 Title:N',
+                                tooltip=['Segment', '紀錄 Title', f'數值 ({unit_label})']
                             ).properties(height=420)
 
                             st.altair_chart(chart, use_container_width=True)
@@ -1733,7 +1725,7 @@ elif page == "跨期數據對比 Longitudinal Comparison":
                         plot_dict_angle = {}
                         for rec in selected_recs:
                             am = json.loads(rec[4]).get("angle_metrics", {})
-                            rec_label = f"{rec[5]} ({rec[3]})"
+                            rec_label = f"{rec[3]} (ID:{rec[0]})"
                             angles = am.get("angles", []) if isinstance(am, dict) else am
                             if isinstance(angles, list):
                                 for a in angles:
@@ -1753,8 +1745,7 @@ elif page == "跨期數據對比 Longitudinal Comparison":
                         for idx, rec in enumerate(selected_recs):
                             details = json.loads(rec[4])
                             with col_arr[idx]:
-                                st.markdown(f"**日期：{rec[5]}**")
-                                st.write(f"標題：{rec[3]}")
+                                st.markdown(f"**紀錄標題：{rec[3]}**")
                                 if "image_b64" in details:
                                     st.image(details["image_b64"], use_container_width=True)
                                 am = details.get("angle_metrics", {})
