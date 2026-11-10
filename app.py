@@ -1611,7 +1611,9 @@ elif page == "雙影同步 Dual Video Sync":
                         save_record(u["username"], u["team_code"], "雙影同步 Dual Video Sync", rec_title_dual, {
                             "image_b64": captured_dual_img, "sync_data": json.loads(captured_dual_json), "saved_at": str(datetime.datetime.now())
                         })
-                        st.success("儲存成功！")# ==================== 【頁面 7：跨期數據對比 (乾淨標題選單、無ID/時間、Altair正確時序)】 ====================
+                        st.success("儲存成功！")
+                        
+# ==================== 【頁面 7：跨期數據對比 (已精簡為「速度 m/s」與「耗時 秒 s」雙指標)】 ====================
 elif page == "跨期數據對比 Longitudinal Comparison":
     st.title("跨期數據對比分析 Longitudinal Comparison Analysis")
     st.markdown("---")
@@ -1656,9 +1658,10 @@ elif page == "跨期數據對比 Longitudinal Comparison":
                     st.subheader("多日數據對比明細")
 
                     if mod_choice == "欄間秒數及速度計算 Hurdle Time & Speed Calculation":
+                        # 已精簡為「分段平均速度 (m/s)」與「單段耗時 (秒 s)」兩個選項
                         chart_metric = st.radio(
                             "選擇折線圖展示指標：", 
-                            ["分段平均速度 (m/s)", "單段耗時 (0.01秒 / 百分秒)", "單段耗時 (秒 s)"], 
+                            ["分段平均速度 (m/s)", "單段耗時 (秒 s)"], 
                             horizontal=True
                         )
 
@@ -1694,14 +1697,12 @@ elif page == "跨期數據對比 Longitudinal Comparison":
 
                                 if "分段平均速度" in chart_metric:
                                     plot_dict[seg][rec_label] = round(speed_ms, 2)
-                                elif "0.01秒" in chart_metric:
-                                    plot_dict[seg][rec_label] = round(split_sec * 100.0, 2)
                                 else:
                                     plot_dict[seg][rec_label] = round(split_sec, 3)
 
                                 table_data[seg][rec_label] = f"速度 {speed_ms:.2f} m/s ｜ 單段 {s.get('split_sec')}s ｜ 累積 {s.get('cum_sec')}s"
 
-                        unit_label = "m/s" if "分段平均速度" in chart_metric else ("0.01s" if "0.01秒" in chart_metric else "s")
+                        unit_label = "m/s" if "分段平均速度" in chart_metric else "s"
                         st.markdown(f"##### 跨期分段速度與耗時變化趨勢圖 (單位：{unit_label})")
                         if plot_dict:
                             df_plot = pd.DataFrame.from_dict(plot_dict, orient='index')
@@ -1766,6 +1767,9 @@ elif page == "跨期數據對比 Longitudinal Comparison":
                                 if isinstance(angles, list):
                                     for a in angles:
                                         st.write(f"• {a.get('name')}：`{a.get('value')}`")
+
+# ==================== 【頁面 8：課表紀錄】 ====================
+elif page == "課表紀錄 Training Plan":
 
 # ==================== 【頁面 8：課表紀錄】 ====================
 elif page == "課表紀錄 Training Plan":
