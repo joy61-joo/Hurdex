@@ -1858,9 +1858,6 @@ elif page == "雙影同步 Dual Video Sync":
                         st.success("成功儲存至團隊歷史數據庫！")
                         st.rerun()
 
-# ==================== 【頁面 7：跨期數據對比】 ====================
-elif page == "跨期數據對比 Longitudinal Comparison":
-
 # ==================== 【頁面 7：跨期數據對比 (已精簡為「速度 m/s」與「耗時 秒 s」雙指標)】 ====================
 elif page == "跨期數據對比 Longitudinal Comparison":
     st.title("跨期數據對比分析 Longitudinal Comparison Analysis")
