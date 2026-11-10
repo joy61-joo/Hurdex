@@ -1634,7 +1634,23 @@ elif page == "雙影同步 Dual Video Sync":
                 const txtTimeA = document.getElementById('txtTimeA'), txtTimeB = document.getElementById('txtTimeB');
                 const sliderMaster = document.getElementById('sliderMaster'), txtMasterTime = document.getElementById('txtMasterTime');
                 let alignTimeA = 0, alignTimeB = 0;
+                // 【修復滑桿底限】當影片載入元資料時，自動將主滑桿 max 設定為較長影片的片長
+                function updateMasterSliderMax() {
+                    const durA = (vidA && !isNaN(vidA.duration)) ? vidA.duration : 0;
+                    const durB = (vidB && !isNaN(vidB.duration)) ? vidB.duration : 0;
+                    const maxDuration = Math.max(durA, durB);
+                    
+                    if (maxDuration > 0 && sliderMaster) {
+                        sliderMaster.max = maxDuration;
+                        sliderMaster.step = 0.01;
+                    }
+                }
 
+                // 監聽兩部影片的長度載入事件
+                vidA.addEventListener('loadedmetadata', updateMasterSliderMax);
+                vidB.addEventListener('loadedmetadata', updateMasterSliderMax);
+                vidA.addEventListener('durationchange', updateMasterSliderMax);
+                vidB.addEventListener('durationchange', updateMasterSliderMax);
                 function syncToStreamlit(el, val) {
                     if (!el) return;
                     try {
