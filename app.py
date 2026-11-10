@@ -1770,9 +1770,6 @@ elif page == "跨期數據對比 Longitudinal Comparison":
 
 # ==================== 【頁面 8：課表紀錄】 ====================
 elif page == "課表紀錄 Training Plan":
-
-# ==================== 【頁面 8：課表紀錄】 ====================
-elif page == "課表紀錄 Training Plan":
     st.title("課表與訓練日誌紀錄 Training Plan & Daily Log")
     st.markdown("---")
 
