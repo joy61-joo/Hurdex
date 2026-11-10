@@ -1560,7 +1560,7 @@ elif page == "殘影軌跡 Ghosting Track":
                         u = st.session_state["user_info"]
                         save_record(u["username"], u["team_code"], "攻欄至落地殘影軌跡 Ghosting Track", rec_title_ghost, {"image_b64": captured_ghost_img, "saved_at": str(datetime.datetime.now())})
                         st.success("儲存成功#     
-==================== 【頁面 6：雙影同步 Dual Video Sync】 ====================
+# ==================== 【頁面 6：雙影同步 Dual Video Sync】 ====================
 elif page == "雙影同步 Dual Video Sync":
     st.title("🎬 雙影同步與關鍵影格角度分析 Dual Video Sync & Angle Analysis")
     st.markdown("---")
@@ -1860,6 +1860,7 @@ elif page == "雙影同步 Dual Video Sync":
 
 # ==================== 【頁面 7：跨期數據對比】 ====================
 elif page == "跨期數據對比 Longitudinal Comparison":
+
 # ==================== 【頁面 7：跨期數據對比 (已精簡為「速度 m/s」與「耗時 秒 s」雙指標)】 ====================
 elif page == "跨期數據對比 Longitudinal Comparison":
     st.title("跨期數據對比分析 Longitudinal Comparison Analysis")
