@@ -1550,224 +1550,312 @@ elif page == "殘影軌跡 Ghosting Track":
                         save_record(u["username"], u["team_code"], "攻欄至落地殘影軌跡 Ghosting Track", rec_title_ghost, {"image_b64": captured_ghost_img, "saved_at": str(datetime.datetime.now())})
                         st.success("儲存成功！")
 
-# ==================== 【頁面 6：雙影同步】 ====================
+# ==================== 【頁面 6：雙影同步 (雙分頁：同步播放 + 雙影角度分析截取)】 ====================
 elif page == "雙影同步 Dual Video Sync":
-    st.title("雙影同步對比模組 Dual Video Sync Module")
+    st.title("🎬 雙影同步與關鍵影格角度分析 Dual Video Sync & Angle Analysis")
     st.markdown("---")
-    col_a, col_b = st.columns(2)
-    with col_a: file_a = st.file_uploader("上傳影片一 Upload Video 1", type=["mp4", "mov", "avi"], key="file_a")
-    with col_b: file_b = st.file_uploader("上傳影片二 Upload Video 2", type=["mp4", "mov", "avi"], key="file_b")
+
+    col_f1, col_f2 = st.columns(2)
+    with col_f1:
+        file_a = st.file_uploader("上傳影片 A (如：左側 / 舊紀錄)", type=["mp4", "mov", "avi"], key="dual_v_a")
+    with col_f2:
+        file_b = st.file_uploader("上傳影片 B (如：右側 / 新紀錄)", type=["mp4", "mov", "avi"], key="dual_v_b")
 
     if file_a and file_b:
-        with st.spinner("正在進行雙影同步對比轉碼..."):
-            bytes_a, mime_a = process_and_convert_video(file_a)
-            bytes_b, mime_b = process_and_convert_video(file_b)
-            b64_a = base64.b64encode(bytes_a).decode("utf-8")
-            b64_b = base64.b64encode(bytes_b).decode("utf-8")
+        b64_a = get_base64_video(file_a)
+        mime_a = get_mime_type(file_a.name)
+        b64_b = get_base64_video(file_b)
+        mime_b = get_mime_type(file_b.name)
 
-        dual_html_template = """<!DOCTYPE html>
-        <html>
-        <head>
-        <style>
-            * { box-sizing: border-box; }
-            body { font-family: -apple-system, sans-serif; background: transparent; color: #0f172a; margin: 0; padding: 0; }
-            .top-bar { display: flex; gap: 10px; margin-bottom: 10px; background: #ffffff; padding: 12px 18px; border-radius: 8px; border: 1px solid #e2e8f0; align-items: center; justify-content: center; flex-wrap: wrap; }
-            .main-slider-box { background: #ffffff; border: 1px solid #2563eb; padding: 10px 16px; border-radius: 8px; margin-bottom: 12px; }
-            .btn-align-play { background: #059669; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; }
-            .btn-sync { background: #2563eb; color: #fff; border: none; padding: 8px 14px; border-radius: 6px; font-weight: bold; cursor: pointer; }
-            .btn-reset { background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; padding: 8px 14px; border-radius: 6px; font-weight: bold; cursor: pointer; }
-            .btn-snap { background: #059669; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; margin-left: auto; }
-            .layout { display: flex; gap: 15px; width: 100%; }
-            .vid-card { flex: 1; background: #ffffff; border-radius: 10px; border: 1px solid #e2e8f0; padding: 12px; }
-            video { width: 100%; border-radius: 6px; max-height: 360px; object-fit: contain; background: #000; display: block; }
-            select { background: #ffffff; color: #0f172a; border: 1px solid #cbd5e1; padding: 4px; border-radius: 4px; font-size: 12px; }
-            input[type=range] { width: 100%; height: 6px; border-radius: 3px; background: #cbd5e1; outline: none; cursor: pointer; }
-        </style>
-        </head>
-        <body>
-            <div class="main-slider-box">
-                <div style="display:flex; justify-content:space-between; margin-bottom:4px; font-size:12px; color:#64748b;">
-                    <span style="color:#2563eb; font-weight:bold;">雙影片同步主控制滑桿 Master Sync Time Slider</span>
-                    <span>相對同步時間: <b id="txtMasterTime" style="color:#059669; font-size:14px;">0.00s</b></span>
+        tab_sync_play, tab_dual_angle = st.tabs([
+            "📹 雙影同步對比播放",
+            "📐 雙影角度分析與截取"
+        ])
+
+        # ------------------ 分頁 1：雙影同步播放器 ------------------
+        with tab_sync_play:
+            dual_play_html = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    .dual-container {{ display: flex; gap: 10px; width: 100%; font-family: sans-serif; }}
+                    .vid-box {{ flex: 1; background: #000; border-radius: 8px; padding: 5px; text-align: center; color: white; }}
+                    video {{ width: 100%; height: auto; max-height: 380px; border-radius: 4px; }}
+                    .controls-bar {{ margin-top: 15px; padding: 15px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; }}
+                    .slider-row {{ display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }}
+                    input[type=range] {{ flex: 1; }}
+                </style>
+            </head>
+            <body>
+                <div class="dual-container">
+                    <div class="vid-box">
+                        <p style="margin:4px; font-weight:bold;">影片 A：{file_a.name}</p>
+                        <video id="vidA" controls><source src="data:{mime_a};base64,{b64_a}"></video>
+                        <div style="margin-top:4px;">
+                            <span>時間: <b id="txtTimeA">0.00</b>s</span> | 
+                            <span>微調: </span>
+                            <button onclick="stepA(-0.033)">-1幀</button>
+                            <button onclick="stepA(0.033)">+1幀</button>
+                        </div>
+                    </div>
+                    <div class="vid-box">
+                        <p style="margin:4px; font-weight:bold;">影片 B：{file_b.name}</p>
+                        <video id="vidB" controls><source src="data:{mime_b};base64,{b64_b}"></video>
+                        <div style="margin-top:4px;">
+                            <span>時間: <b id="txtTimeB">0.00</b>s</span> | 
+                            <span>微調: </span>
+                            <button onclick="stepB(-0.033)">-1幀</button>
+                            <button onclick="stepB(0.033)">+1幀</button>
+                        </div>
+                    </div>
                 </div>
-                <input type="range" id="sliderMaster" min="0" max="100" value="0" step="0.01">
-            </div>
 
-            <div class="top-bar">
-                <button id="btnPlayAlign" class="btn-align-play">從對齊點同步播放 Sync Play</button>
-                <button id="btnPlayDual" class="btn-sync">暫停/播放</button>
-                <button id="btnResetDual" class="btn-reset">時間歸零 Reset Time</button>
-                <button id="btnSnapDual" class="btn-snap">擷取雙影對比畫面 Capture Dual</button>
-            </div>
+                <div class="controls-bar">
+                    <div class="slider-row">
+                        <b style="width:140px;">主控制同步滑桿:</b>
+                        <input type="range" id="sliderMaster" min="0" max="100" value="0" step="0.01">
+                        <span id="txtMasterTime" style="font-weight:bold; width:60px;">0.00s</span>
+                    </div>
+                    <div style="display:flex; gap:10px; justify-content:center; margin-top:10px;">
+                        <button onclick="playBoth()" style="padding:6px 16px; background:#2563eb; color:white; border:none; border-radius:4px; cursor:pointer;">▶ 同步播放</button>
+                        <button onclick="pauseBoth()" style="padding:6px 16px; background:#dc2626; color:white; border:none; border-radius:4px; cursor:pointer;">⏸ 同步暫停</button>
+                    </div>
+                </div>
+
+                <script>
+                    const vidA = document.getElementById('vidA'), vidB = document.getElementById('vidB');
+                    const sliderMaster = document.getElementById('sliderMaster');
+                    const txtTimeA = document.getElementById('txtTimeA'), txtTimeB = document.getElementById('txtTimeB');
+                    const txtMasterTime = document.getElementById('txtMasterTime');
+
+                    function updateMasterSliderMax() {{
+                        const durA = (vidA && !isNaN(vidA.duration)) ? vidA.duration : 0;
+                        const durB = (vidB && !isNaN(vidB.duration)) ? vidB.duration : 0;
+                        const maxDur = Math.max(durA, durB);
+                        if (maxDur > 0 && sliderMaster) {{
+                            sliderMaster.max = maxDur;
+                            sliderMaster.step = "0.01";
+                        }}
+                    }}
+
+                    vidA.addEventListener('loadedmetadata', updateMasterSliderMax);
+                    vidB.addEventListener('loadedmetadata', updateMasterSliderMax);
+                    vidA.addEventListener('durationchange', updateMasterSliderMax);
+                    vidB.addEventListener('durationchange', updateMasterSliderMax);
+
+                    function updateTimes() {{
+                        txtTimeA.innerText = vidA.currentTime.toFixed(2);
+                        txtTimeB.innerText = vidB.currentTime.toFixed(2);
+                        const curMax = Math.max(vidA.currentTime, vidB.currentTime);
+                        sliderMaster.value = curMax;
+                        txtMasterTime.innerText = curMax.toFixed(2) + 's';
+                    }}
+
+                    vidA.addEventListener('timeupdate', updateTimes);
+                    vidB.addEventListener('timeupdate', updateTimes);
+
+                    sliderMaster.addEventListener('input', function() {{
+                        const val = parseFloat(this.value);
+                        if (val <= vidA.duration) vidA.currentTime = val;
+                        if (val <= vidB.duration) vidB.currentTime = val;
+                    }});
+
+                    function stepA(val) {{ vidA.currentTime = Math.max(0, vidA.currentTime + val); }}
+                    function stepB(val) {{ vidB.currentTime = Math.max(0, vidB.currentTime + val); }}
+                    function playBoth() {{ vidA.play(); vidB.play(); }}
+                    function pauseBoth() {{ vidA.pause(); vidB.pause(); }}
+                </script>
+            </body>
+            </html>
+            """
+            components.html(dual_play_html, height=560, scrolling=False)
+
+        # ------------------ 分頁 2：雙影角度分析與截取 ------------------
+        with tab_dual_angle:
+            st.info("💡 **操作指南**：在下方兩部影片中暫停於關鍵動作，點擊「擷取畫面至畫布」，即可使用滑鼠連續點擊 3 點進行肢體夾角量測，完成後點擊「合成並上傳至團隊紀錄」。")
             
-            <div class="layout">
-                <div class="vid-card">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                        <h5 style="margin:0; color:#2563eb;">影片一 Video 1</h5>
-                        <span id="txtTimeA" style="font-size:12px; font-weight:bold; color:#2563eb;">0.00s</span>
+            dual_angle_html = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    .angle-container {{ display: flex; gap: 12px; width: 100%; font-family: sans-serif; }}
+                    .canvas-card {{ flex: 1; background: #1e293b; padding: 8px; border-radius: 8px; text-align: center; color: white; }}
+                    canvas {{ width: 100%; background: #000; border-radius: 4px; cursor: crosshair; margin-top: 6px; }}
+                    .btn-group {{ display: flex; gap: 8px; justify-content: center; margin-top: 6px; }}
+                    button {{ padding: 5px 12px; border-radius: 4px; border: none; cursor: pointer; font-weight: bold; font-size: 12px; }}
+                    .btn-cap {{ background: #3b82f6; color: white; }}
+                    .btn-clr {{ background: #ef4444; color: white; }}
+                    .btn-upload {{ background: #10b981; color: white; font-size: 14px; padding: 8px 24px; margin-top: 12px; }}
+                    .angle-info {{ background: #334155; padding: 4px; border-radius: 4px; font-size: 12px; margin-top: 4px; color: #38bdf8; }}
+                </style>
+            </head>
+            <body>
+                <div style="display:none;">
+                    <video id="vSrcA" src="data:{mime_a};base64,{b64_a}" controls></video>
+                    <video id="vSrcB" src="data:{mime_b};base64,{b64_b}" controls></video>
+                </div>
+
+                <div class="angle-container">
+                    <div class="canvas-card">
+                        <div style="font-weight:bold; font-size:13px;">影片 A 關鍵畫面</div>
+                        <canvas id="canA" width="480" height="320"></canvas>
+                        <div class="angle-info" id="infoA">角度：尚未量測 (滑鼠點擊 3 點)</div>
+                        <div class="btn-group">
+                            <button class="btn-cap" onclick="capFrame('A')">📷 擷取影片 A 畫面</button>
+                            <button class="btn-clr" onclick="clearPts('A')">↺ 重置 A 角度</button>
+                        </div>
                     </div>
-                    <video id="vidA" muted playsinline></video>
-                    <input type="range" id="sliderA" min="0" max="100" value="0" step="0.01" style="width:100%; margin-top:6px;">
-                    <div style="display:flex; gap:6px; margin-top:6px;">
-                        <button id="btnPlayA" style="background:#f1f5f9; color:#334155; border:1px solid #cbd5e1; padding:4px 8px; border-radius:4px; font-size:12px; cursor:pointer;">播放/暫停 A</button>
-                        <button id="btnSetAlignA" style="background:#2563eb; color:#fff; border:none; padding:4px 8px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;">設為對齊點 A</button>
+                    <div class="canvas-card">
+                        <div style="font-weight:bold; font-size:13px;">影片 B 關鍵畫面</div>
+                        <canvas id="canB" width="480" height="320"></canvas>
+                        <div class="angle-info" id="infoB">角度：尚未量測 (滑鼠點擊 3 點)</div>
+                        <div class="btn-group">
+                            <button class="btn-cap" onclick="capFrame('B')">📷 擷取影片 B 畫面</button>
+                            <button class="btn-clr" onclick="clearPts('B')">↺ 重置 B 角度</button>
+                        </div>
                     </div>
                 </div>
-                
-                <div class="vid-card">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                        <h5 style="margin:0; color:#d97706;">影片二 Video 2</h5>
-                        <span id="txtTimeB" style="font-size:12px; font-weight:bold; color:#d97706;">0.00s</span>
-                    </div>
-                    <video id="vidB" muted playsinline></video>
-                    <input type="range" id="sliderB" min="0" max="100" value="0" step="0.01" style="width:100%; margin-top:6px;">
-                    <div style="display:flex; gap:6px; margin-top:6px;">
-                        <button id="btnPlayB" style="background:#f1f5f9; color:#334155; border:1px solid #cbd5e1; padding:4px 8px; border-radius:4px; font-size:12px; cursor:pointer;">播放/暫停 B</button>
-                        <button id="btnSetAlignB" style="background:#d97706; color:#fff; border:none; padding:4px 8px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer;">設為對齊點 B</button>
-                    </div>
+
+                <div style="text-align:center;">
+                    <button class="btn-upload" onclick="mergeAndUpload()">🚀 合成兩圖與角度數據並傳送至系統</button>
                 </div>
-            </div>
 
-            <script>
-                const vidA = document.getElementById('vidA'), vidB = document.getElementById('vidB');
-                const sliderA = document.getElementById('sliderA'), sliderB = document.getElementById('sliderB');
-                const txtTimeA = document.getElementById('txtTimeA'), txtTimeB = document.getElementById('txtTimeB');
-                const sliderMaster = document.getElementById('sliderMaster'), txtMasterTime = document.getElementById('txtMasterTime');
-                let alignTimeA = 0, alignTimeB = 0;
-                // 【修復滑桿底限】當影片載入元資料時，自動將主滑桿 max 設定為較長影片的片長
-                function updateMasterSliderMax() {
-                    const durA = (vidA && !isNaN(vidA.duration)) ? vidA.duration : 0;
-                    const durB = (vidB && !isNaN(vidB.duration)) ? vidB.duration : 0;
-                    const maxDuration = Math.max(durA, durB);
-                    
-                    if (maxDuration > 0 && sliderMaster) {
-                        sliderMaster.max = maxDuration;
-                        sliderMaster.step = 0.01;
-                    }
-                }
+                <script>
+                    const vSrcA = document.getElementById('vSrcA'), vSrcB = document.getElementById('vSrcB');
+                    const canA = document.getElementById('canA'), ctxA = canA.getContext('2d');
+                    const canB = document.getElementById('canB'), ctxB = canB.getContext('2d');
 
-                // 監聽兩部影片的長度載入事件
-                vidA.addEventListener('loadedmetadata', updateMasterSliderMax);
-                vidB.addEventListener('loadedmetadata', updateMasterSliderMax);
-                vidA.addEventListener('durationchange', updateMasterSliderMax);
-                vidB.addEventListener('durationchange', updateMasterSliderMax);
-                function syncToStreamlit(el, val) {
-                    if (!el) return;
-                    try {
-                        const pWin = window.parent;
-                        const nativeSetter = pWin.Object.getOwnPropertyDescriptor(pWin.HTMLTextAreaElement.prototype, "value").set;
-                        nativeSetter.call(el, val);
-                        if (el._valueTracker) el._valueTracker.setValue('');
-                        el.focus(); el.dispatchEvent(new pWin.Event('input', { bubbles: true }));
-                        el.dispatchEvent(new pWin.Event('change', { bubbles: true })); el.blur();
-                    } catch(err) { el.value = val; el.dispatchEvent(new Event('input', { bubbles: true })); }
-                }
+                    let ptsA = [], ptsB = [];
+                    let angleA = null, angleB = null;
+                    let imgDataA = null, imgDataB = null;
 
-                function b64ToBlob(b64Data, contentType) {
-                    const byteCharacters = atob(b64Data); const sliceSize = 1024 * 1024; const byteArrays = [];
-                    for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
-                        const slice = byteCharacters.slice(offset, offset + sliceSize);
-                        const byteNumbers = new Array(slice.length);
-                        for (let i = 0; i < slice.length; i++) byteNumbers[i] = slice.charCodeAt(i);
-                        byteArrays.push(new Uint8Array(byteNumbers));
-                    }
-                    return new Blob(byteArrays, {type: contentType});
-                }
-                try {
-                    vidA.src = URL.createObjectURL(b64ToBlob("___B64_A___", "___MIME_A___"));
-                    vidB.src = URL.createObjectURL(b64ToBlob("___B64_B___", "___MIME_B___"));
-                } catch(e){}
+                    function capFrame(tag) {{
+                        const v = (tag === 'A') ? vSrcA : vSrcB;
+                        const c = (tag === 'A') ? canA : canB;
+                        const ctx = (tag === 'A') ? ctxA : ctxB;
+                        ctx.drawImage(v, 0, 0, c.width, c.height);
+                        if (tag === 'A') {{ imgDataA = ctx.getImageData(0,0,c.width,c.height); ptsA = []; angleA = null; document.getElementById('infoA').innerText = '角度：已擷取畫面，請點擊 3 點標記'; }}
+                        else {{ imgDataB = ctx.getImageData(0,0,c.width,c.height); ptsB = []; angleB = null; document.getElementById('infoB').innerText = '角度：已擷取畫面，請點擊 3 點標記'; }}
+                    }}
 
-                vidA.addEventListener('loadedmetadata', () => { sliderA.max = vidA.duration; });
-                vidB.addEventListener('loadedmetadata', () => { sliderB.max = vidB.duration; });
+                    function clearPts(tag) {{
+                        const ctx = (tag === 'A') ? ctxA : ctxB;
+                        const img = (tag === 'A') ? imgDataA : imgDataB;
+                        if (img) ctx.putImageData(img, 0, 0);
+                        if (tag === 'A') {{ ptsA = []; angleA = null; document.getElementById('infoA').innerText = '角度：尚未量測'; }}
+                        else {{ ptsB = []; angleB = null; document.getElementById('infoB').innerText = '角度：尚未量測'; }}
+                    }}
 
-                vidA.addEventListener('timeupdate', () => {
-                    txtTimeA.innerText = vidA.currentTime.toFixed(2) + 's';
-                    if (!vidA.paused) sliderA.value = vidA.currentTime;
-                });
-                vidB.addEventListener('timeupdate', () => {
-                    txtTimeB.innerText = vidB.currentTime.toFixed(2) + 's';
-                    if (!vidB.paused) sliderB.value = vidB.currentTime;
-                });
+                    function addClickEvent(can, tag) {{
+                        can.addEventListener('click', function(e) {{
+                            const rect = can.getBoundingClientRect();
+                            const x = (e.clientX - rect.left) * (can.width / rect.width);
+                            const y = (e.clientY - rect.top) * (can.height / rect.height);
+                            const pts = (tag === 'A') ? ptsA : ptsB;
 
-                sliderA.addEventListener('input', (e) => { vidA.currentTime = parseFloat(e.target.value); txtTimeA.innerText = vidA.currentTime.toFixed(2) + 's'; });
-                sliderB.addEventListener('input', (e) => { vidB.currentTime = parseFloat(e.target.value); txtTimeB.innerText = vidB.currentTime.toFixed(2) + 's'; });
+                            if (pts.length < 3) {{
+                                pts.push({{x, y}});
+                                drawPts(tag);
+                            }}
+                        }});
+                    }}
+                    addClickEvent(canA, 'A');
+                    addClickEvent(canB, 'B');
 
-                document.getElementById('btnPlayA').addEventListener('click', () => { if (vidA.paused) vidA.play(); else vidA.pause(); });
-                document.getElementById('btnPlayB').addEventListener('click', () => { if (vidB.paused) vidB.play(); else vidB.pause(); });
+                    function drawPts(tag) {{
+                        const c = (tag === 'A') ? canA : canB;
+                        const ctx = (tag === 'A') ? ctxA : ctxB;
+                        const img = (tag === 'A') ? imgDataA : imgDataB;
+                        const pts = (tag === 'A') ? ptsA : ptsB;
 
-                document.getElementById('btnSetAlignA').addEventListener('click', () => { alignTimeA = vidA.currentTime; alert(`影片一對齊點設為: ${alignTimeA.toFixed(2)}s`); });
-                document.getElementById('btnSetAlignB').addEventListener('click', () => { alignTimeB = vidB.currentTime; alert(`影片二對齊點設為: ${alignTimeB.toFixed(2)}s`); });
+                        if (img) ctx.putImageData(img, 0, 0);
 
-                sliderMaster.addEventListener('input', (e) => {
-                    const relOffset = parseFloat(e.target.value);
-                    txtMasterTime.innerText = relOffset.toFixed(2) + 's';
-                    vidA.currentTime = Math.min(vidA.duration, Math.max(0, alignTimeA + relOffset));
-                    vidB.currentTime = Math.min(vidB.duration, Math.max(0, alignTimeB + relOffset));
-                });
+                        // 畫點與連線
+                        ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 3; ctx.fillStyle = '#f59e0b';
+                        for(let i=0; i<pts.length; i++) {{
+                            ctx.beginPath(); ctx.arc(pts[i].x, pts[i].y, 5, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+                        }}
 
-                document.getElementById('btnPlayAlign').addEventListener('click', () => {
-                    vidA.pause(); vidB.pause(); vidA.currentTime = alignTimeA; vidB.currentTime = alignTimeB; vidA.play(); vidB.play();
-                });
+                        if (pts.length === 2) {{
+                            ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y); ctx.lineTo(pts[1].x, pts[1].y); ctx.stroke();
+                        }} else if (pts.length === 3) {{
+                            ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y); ctx.lineTo(pts[1].x, pts[1].y); ctx.lineTo(pts[2].x, pts[2].y); ctx.stroke();
 
-                document.getElementById('btnPlayDual').addEventListener('click', () => {
-                    if (vidA.paused || vidB.paused) { vidA.play(); vidB.play(); } else { vidA.pause(); vidB.pause(); }
-                });
+                            // 計算夾角 (以第 2 點 pts[1] 為頂點)
+                            const rad1 = Math.atan2(pts[0].y - pts[1].y, pts[0].x - pts[1].x);
+                            const rad2 = Math.atan2(pts[2].y - pts[1].y, pts[2].x - pts[1].x);
+                            let deg = Math.abs((rad1 - rad2) * (180 / Math.PI));
+                            if (deg > 180) deg = 360 - deg;
+                            deg = roundVal(deg, 1);
 
-                document.getElementById('btnResetDual').addEventListener('click', () => {
-                    vidA.pause(); vidB.pause(); vidA.currentTime = 0; vidB.currentTime = 0; sliderMaster.value = 0; txtMasterTime.innerText = '0.00s';
-                });
+                            if (tag === 'A') angleA = deg; else angleB = deg;
 
-                document.getElementById('btnSnapDual').addEventListener('click', () => {
-                    const off = document.createElement('canvas');
-                    const w1 = vidA.videoWidth, h1 = vidA.videoHeight, w2 = vidB.videoWidth, h2 = vidB.videoHeight;
-                    const targetH = Math.max(h1, h2);
-                    const targetW1 = Math.round(w1 * (targetH / h1)), targetW2 = Math.round(w2 * (targetH / h2));
-                    off.width = targetW1 + targetW2 + 30; off.height = targetH + 60;
-                    const offCtx = off.getContext('2d');
-                    offCtx.fillStyle = "#f8fafc"; offCtx.fillRect(0, 0, off.width, off.height);
-                    offCtx.fillStyle = "#2563eb"; offCtx.font = "bold 18px sans-serif";
-                    offCtx.fillText(`影片一 (${vidA.currentTime.toFixed(2)}s) - 對齊: ${alignTimeA.toFixed(2)}s`, 15, 35);
-                    offCtx.fillStyle = "#d97706";
-                    offCtx.fillText(`影片二 (${vidB.currentTime.toFixed(2)}s) - 對齊: ${alignTimeB.toFixed(2)}s`, targetW1 + 35, 35);
-                    offCtx.drawImage(vidA, 10, 50, targetW1, targetH);
-                    offCtx.drawImage(vidB, targetW1 + 20, 50, targetW2, targetH);
+                            // 標示文字
+                            ctx.fillStyle = '#38bdf8'; ctx.font = 'bold 16px sans-serif';
+                            ctx.fillText(deg + '°', pts[1].x + 10, pts[1].y - 10);
+                            document.getElementById((tag==='A')?'infoA':'infoB').innerText = '夾角量測結果：' + deg + '°';
+                        }}
+                    }}
 
-                    const textAreas = window.parent.document.querySelectorAll('textarea');
-                    let targetDualTA = null, targetDualDataTA = null;
-                    textAreas.forEach(ta => {
-                        const label = ta.getAttribute('aria-label') || '';
-                        if (label.includes('dual_img_b64')) targetDualTA = ta;
-                        if (label.includes('dual_data_json')) targetDualDataTA = ta;
-                    });
-                    if (targetDualTA && targetDualDataTA) {
-                        syncToStreamlit(targetDualTA, off.toDataURL('image/jpeg', 0.85));
-                        syncToStreamlit(targetDualDataTA, JSON.stringify({ time_a: vidA.currentTime.toFixed(2), time_b: vidB.currentTime.toFixed(2) }));
-                        alert("雙影對比畫面已成功擷取！");
-                    }
-                });
-            </script>
-        </body>
-        </html>"""
+                    function roundVal(v, p) {{ return Math.round(v * Math.pow(10, p)) / Math.pow(10, p); }}
 
-        dual_html_code = dual_html_template.replace("___B64_A___", b64_a).replace("___MIME_A___", mime_a).replace("___B64_B___", b64_b).replace("___MIME_B___", mime_b)
-        components.html(dual_html_code, height=760, scrolling=False)
+                    function mergeAndUpload() {{
+                        const outCan = document.createElement('canvas');
+                        outCan.width = 960; outCan.height = 360;
+                        const oCtx = outCan.getContext('2d');
+                        oCtx.fillStyle = '#0f172a'; oCtx.fillRect(0,0,960,360);
+
+                        oCtx.drawImage(canA, 0, 20, 470, 320);
+                        oCtx.drawImage(canB, 490, 20, 470, 320);
+
+                        oCtx.fillStyle = '#ffffff'; oCtx.font = 'bold 14px sans-serif';
+                        oCtx.fillText('影片 A (角度: ' + (angleA ? angleA + '°' : '未量測') + ')', 10, 15);
+                        oCtx.fillText('影片 B (角度: ' + (angleB ? angleB + '°' : '未量測') + ')', 500, 15);
+
+                        const mergedB64 = outCan.toDataURL('image/png');
+                        const jsonPayload = JSON.stringify({{
+                            angle_A: angleA,
+                            angle_B: angleB,
+                            timestamp: new Date().toISOString()
+                        }});
+
+                        // 傳送回 Streamlit 文字區域
+                        window.parent.postMessage({{ type: 'streamlit:setComponentValue', value: mergedB64 }}, '*');
+                        
+                        // 寫入 Streamlit Text Area 變數
+                        const imgBox = window.parent.document.querySelector('textarea[aria-label="dual_img_b64"]');
+                        const jsonBox = window.parent.document.querySelector('textarea[aria-label="dual_data_json"]');
+                        if (imgBox) {{ imgBox.value = mergedB64; imgBox.dispatchEvent(new Event('input', {{ bubbles: true }})); }}
+                        if (jsonBox) {{ jsonBox.value = jsonPayload; jsonBox.dispatchEvent(new Event('input', {{ bubbles: true }})); }}
+                    }}
+                </script>
+            </body>
+            </html>
+            """
+            components.html(dual_angle_html, height=490, scrolling=False)
 
         st.markdown("---")
         captured_dual_img = st.text_area("dual_img_b64", key="captured_dual_img", label_visibility="collapsed")
         captured_dual_json = st.text_area("dual_data_json", key="captured_dual_json", label_visibility="collapsed")
 
         if captured_dual_img and captured_dual_json:
-            st.image(captured_dual_img, caption="雙影對比畫面合成圖", use_container_width=True)
+            st.success("📸 已成功擷取並合成雙影角度分析畫面！")
+            st.image(captured_dual_img, caption="雙影對比與角度量測合成圖", use_container_width=True)
+
             if st.session_state["user_info"]:
-                with st.form("save_dual_form"):
-                    rec_title_dual = st.text_input("紀錄名稱", value=f"雙影同步對比 {file_a.name} vs {file_b.name}")
-                    if st.form_submit_button("儲存至團隊資料庫"):
+                with st.form("save_dual_angle_form"):
+                    rec_title_dual = st.text_input("紀錄名稱", value=f"雙影角度對比 {file_a.name} vs {file_b.name}")
+                    if st.form_submit_button("💾 儲存至團隊數據庫", use_container_width=True):
                         u = st.session_state["user_info"]
                         save_record(u["username"], u["team_code"], "雙影同步 Dual Video Sync", rec_title_dual, {
-                            "image_b64": captured_dual_img, "sync_data": json.loads(captured_dual_json), "saved_at": str(datetime.datetime.now())
+                            "image_b64": captured_dual_img, 
+                            "angle_metrics": json.loads(captured_dual_json), 
+                            "saved_at": str(datetime.datetime.now())
                         })
-                        st.success("儲存成功！")
+                        st.success("成功儲存至團隊歷史數據庫！")
+                        st.rerun()
                         
 # ==================== 【頁面 7：跨期數據對比 (已精簡為「速度 m/s」與「耗時 秒 s」雙指標)】 ====================
 elif page == "跨期數據對比 Longitudinal Comparison":
