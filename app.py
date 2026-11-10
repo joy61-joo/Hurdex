@@ -703,7 +703,7 @@ elif page == "運動防護與傷勢評估 Injury & Defense Feedback":
                         if st.button(f"🗑️ 刪除這筆防護評估 ID {fb_id}", key=f"del_fb_{fb_id}"):
                             delete_injury_feedback(fb_id)
                             st.rerun()
-# ==================== 【頁面 3：比賽行事曆 (已移除地點欄位，新增月曆圖卡視圖)】 ====================
+# ==================== 【頁面 3：比賽行事曆 (選手隱藏姓名備註 & 月份改為加減按鈕)】 ====================
 elif page == "比賽行事曆 Competition Calendar":
     st.title("🏆 團隊比賽行事曆與賽事倒數")
     st.markdown("---")
@@ -717,7 +717,7 @@ elif page == "比賽行事曆 Competition Calendar":
 
         if role in ["coach", "trainer"]:
             team_athletes = get_team_athletes(team_code)
-            selected_user = st.selectbox("檢視賽事範圍：", ["全團隊賽事"] + team_athletes)
+            selected_user = st.selectbox("檢視賽事範圍：", ["全團隊賽事"] + team_athletes) if team_athletes else "全團隊賽事"
             target_user = None if selected_user == "全團隊賽事" else selected_user
         else:
             target_user = u["username"]
@@ -751,12 +751,15 @@ elif page == "比賽行事曆 Competition Calendar":
             for idx, item in enumerate(active_and_upcoming[:3]):
                 with cols[idx % 3]:
                     date_disp = item["start_str"] if item["start_str"] == item["end_str"] else f"{item['start_str']} ~ {item['end_str']}"
+                    # 判斷是否為教練/防護員，非教練防護員則隱藏使用者姓名備註
+                    user_suffix = f" ({item['user']})" if role in ["coach", "trainer"] else ""
+
                     if item["is_active"]:
-                        st.error(f"🔥 **比賽進行中！**\n\n**{item['name']}** ({item['user']})\n\n📅 日期：{date_disp}")
+                        st.error(f"🔥 **比賽進行中！**\n\n**{item['name']}**{user_suffix}\n\n📅 日期：{date_disp}")
                     elif item["days_start"] <= 7:
-                        st.warning(f"⏰ **倒數 {item['days_start']} 天**\n\n**{item['name']}** ({item['user']})\n\n📅 日期：{date_disp}")
+                        st.warning(f"⏰ **倒數 {item['days_start']} 天**\n\n**{item['name']}**{user_suffix}\n\n📅 日期：{date_disp}")
                     else:
-                        st.info(f"📅 **倒數 {item['days_start']} 天**\n\n**{item['name']}** ({item['user']})\n\n📅 日期：{date_disp}")
+                        st.info(f"📅 **倒數 {item['days_start']} 天**\n\n**{item['name']}**{user_suffix}\n\n📅 日期：{date_disp}")
 
                     if role in ["coach", "trainer"] or item["user"] == u["username"]:
                         if st.button(f"🗑️ 刪除賽事", key=f"del_card_{item['id']}"):
@@ -767,26 +770,24 @@ elif page == "比賽行事曆 Competition Calendar":
 
         st.markdown("---")
 
-        # 【三個功能分頁】：月曆視圖、新增日程、賽事總覽清單
         tab_cal_view, tab_add_comp, tab_list_comp = st.tabs([
             "📆 賽事月曆視圖 Calendar Grid",
             "➕ 新增賽事日程",
             "📋 賽事總覽清單"
         ])
 
-        # ------------------ 分頁 1：手機月曆樣式視圖 ------------------
+        # ------------------ 分頁 1：賽事月曆視圖 ------------------
         with tab_cal_view:
             import calendar
             c_y, c_m = st.columns([1, 1])
             with c_y:
-                sel_year = st.number_input("選擇年份 Year", min_value=2024, max_value=2030, value=today.year, key="cal_sel_year")
+                sel_year = st.number_input("選擇年份 Year", min_value=2024, max_value=2030, value=int(today.year), step=1, key="cal_sel_year")
             with c_m:
-                sel_month = st.selectbox("選擇月份 Month", list(range(1, 13)), index=today.month - 1, key="cal_sel_month")
+                # 已改為 number_input 加減按鈕控制月份 (1~12月)
+                sel_month = st.number_input("選擇月份 Month", min_value=1, max_value=12, value=int(today.month), step=1, key="cal_sel_month")
 
-            # 取得當月星期矩陣 (週一為第 0 欄)
-            cal_matrix = calendar.monthcalendar(sel_year, sel_month)
+            cal_matrix = calendar.monthcalendar(int(sel_year), int(sel_month))
 
-            # 解析賽事跨度日期
             parsed_comps = []
             for comp in competitions:
                 c_user, c_name, c_start_str, c_end_str = comp[1], comp[2], comp[3], comp[4]
@@ -796,7 +797,6 @@ elif page == "比賽行事曆 Competition Calendar":
                     parsed_comps.append({"name": c_name, "user": c_user, "start": s_dt, "end": e_dt})
                 except Exception: pass
 
-            # 構建 HTML 月曆表格
             html_cal = """
             <style>
                 .cal-table { width: 100%; border-collapse: collapse; table-layout: fixed; background: #ffffff; border-radius: 8px; overflow: hidden; border: 1px solid #cbd5e1; }
@@ -829,16 +829,16 @@ elif page == "比賽行事曆 Competition Calendar":
                     if day == 0:
                         html_cal += '<td class="cal-td-empty"></td>'
                     else:
-                        curr_dt = datetime.date(sel_year, sel_month, day)
+                        curr_dt = datetime.date(int(sel_year), int(sel_month), day)
                         is_today = (curr_dt == today)
                         date_html = f'<span class="cal-today-num">{day}</span>' if is_today else f'<span class="cal-date-num">{day}</span>'
 
-                        # 比對並列出當日發生的賽事標籤
                         day_events_html = ""
                         for item in parsed_comps:
                             if item["start"] <= curr_dt <= item["end"]:
                                 tag_class = "comp-tag-active" if item["start"] <= today <= item["end"] else ""
-                                day_events_html += f'<div class="comp-tag {tag_class}" title="{item["name"]} ({item["user"]})">{item["name"]}</div>'
+                                tag_label = f"{item['name']} ({item['user']})" if role in ["coach", "trainer"] else item["name"]
+                                day_events_html += f'<div class="comp-tag {tag_class}" title="{tag_label}">{tag_label}</div>'
 
                         html_cal += f'<td class="cal-td">{date_html}{day_events_html}</td>'
                 html_cal += "</tr>"
@@ -868,7 +868,8 @@ elif page == "比賽行事曆 Competition Calendar":
                 c_id, c_user, c_name, c_start_str, c_end_str = comp[0], comp[1], comp[2], comp[3], comp[4]
                 c_notes = comp[6] if len(comp) > 6 else ""
                 date_range = c_start_str if c_start_str == c_end_str else f"{c_start_str} 至 {c_end_str}"
-                with st.expander(f"{date_range} ｜ {c_name} (建立者: {c_user})"):
+                creator_info = f" (建立者: {c_user})" if role in ["coach", "trainer"] else ""
+                with st.expander(f"{date_range} ｜ {c_name}{creator_info}"):
                     if c_notes:
                         st.write(f"• **賽事備註**：\n```text\n{c_notes}\n```")
                     if role in ["coach", "trainer"] or c_user == u["username"]:
