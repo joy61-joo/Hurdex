@@ -714,8 +714,7 @@ elif page == "運動防護與傷勢評估 Injury & Defense Feedback":
                     if role in ["trainer", "coach"]:
                         if st.button(f"🗑️ 刪除這筆防護評估 ID {fb_id}", key=f"del_fb_{fb_id}"):
                             delete_injury_feedback(fb_id)
-                            st.rerun()
-# ==================== 【頁面 3：比賽行事曆 (已加入「編輯賽事與備註」功能)】 ====================
+                            st.rerun()# ==================== 【頁面 3：比賽行事曆 (賽事總覽依日期由近到遠排序)】 ====================
 elif page == "比賽行事曆 Competition Calendar":
     st.title("🏆 團隊比賽行事曆與賽事倒數")
     st.markdown("---")
@@ -872,9 +871,18 @@ elif page == "比賽行事曆 Competition Calendar":
                     else:
                         st.warning("請輸入賽事名稱")
 
-        # ------------------ 分頁 3：賽事總覽清單 (支援編輯備註與名稱) ------------------
+        # ------------------ 分頁 3：賽事總覽清單 (由近到遠排序) ------------------
         with tab_list_comp:
-            for comp in competitions:
+            # 依賽事開始日期由近到遠進行排序
+            def parse_comp_start(c):
+                try:
+                    return datetime.datetime.strptime(c[3], "%Y-%m-%d").date()
+                except Exception:
+                    return datetime.date.max
+
+            sorted_competitions = sorted(competitions, key=parse_comp_start)
+
+            for comp in sorted_competitions:
                 c_id, c_user, c_name, c_start_str, c_end_str = comp[0], comp[1], comp[2], comp[3], comp[4]
                 c_notes = comp[6] if len(comp) > 6 else ""
                 date_range = c_start_str if c_start_str == c_end_str else f"{c_start_str} 至 {c_end_str}"
