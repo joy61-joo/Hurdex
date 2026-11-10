@@ -1612,7 +1612,7 @@ elif page == "雙影同步 Dual Video Sync":
                         })
                         st.success("儲存成功！")
 
-# ==================== 【頁面 7：跨期數據對比 (已修正 X軸 排序與標籤連動)】 ====================
+# ==================== 【頁面 7：跨期數據對比 (已補齊 01~11 全區段編號與舊資料相容清洗)】 ====================
 elif page == "跨期數據對比 Longitudinal Comparison":
     st.title("跨期數據對比分析 Longitudinal Comparison Analysis")
     st.markdown("---")
@@ -1652,25 +1652,25 @@ elif page == "跨期數據對比 Longitudinal Comparison":
                             horizontal=True
                         )
 
-                        # 舊標籤與新帶編號標籤的對照表 (確保向下相容舊資料庫)
-                        SEG_MAP = {
-                            "起跑->H1": "01. 起跑->H1",
-                            "H1->H2": "02. H1->H2",
-                            "H2->H3": "03. H2->H3",
-                            "H3->H4": "04. H3->H4",
-                            "H4->H5": "05. H4->H5",
-                            "H5->H6": "06. H5->H6",
-                            "H6->H7": "07. H6->H7",
-                            "H7->H8": "08. H7->H8",
-                            "H8->H9": "09. H8->H9",
-                            "H9->H10": "10. H9->H10",
-                            "H10->終點": "11. H10->終點"
-                        }
-
+                        # 【標準 11 段欄間時序】：確保每個段落均有雙位數編號 (01 ~ 11)
                         ORDERED_SEGMENTS = [
                             "01. 起跑->H1", "02. H1->H2", "03. H2->H3", "04. H3->H4", "05. H4->H5",
                             "06. H5->H6", "07. H6->H7", "08. H7->H8", "09. H8->H9", "10. H9->H10", "11. H10->終點"
                         ]
+
+                        # 自動相容函式：清洗歷史舊資料，強制補上 01 及 11 等雙位數編號
+                        def normalize_segment_name(raw_seg):
+                            if not raw_seg: return "01. 起跑->H1"
+                            s = str(raw_seg).strip()
+                            for seg in ORDERED_SEGMENTS:
+                                # 若已經包含標準編號或無編號標籤，進行精確匹配
+                                seg_core = seg.split(". ")[-1]
+                                if s == seg or s == seg_core:
+                                    return seg
+                            # 彈性規則比對
+                            if "起跑" in s or "H1" in s and "起" in s: return "01. 起跑->H1"
+                            if "H10" in s and "終點" in s: return "11. H10->終點"
+                            return s
 
                         plot_dict = {}
                         table_data = {}
@@ -1681,7 +1681,7 @@ elif page == "跨期數據對比 Longitudinal Comparison":
 
                             for s in splits:
                                 raw_seg = s.get("segment", "")
-                                seg = SEG_MAP.get(raw_seg, raw_seg)
+                                seg = normalize_segment_name(raw_seg)
 
                                 try: split_sec = float(s.get("split_sec", "0"))
                                 except ValueError: split_sec = 0.0
@@ -1706,7 +1706,7 @@ elif page == "跨期數據對比 Longitudinal Comparison":
                         if plot_dict:
                             df_plot = pd.DataFrame.from_dict(plot_dict, orient='index')
                             
-                            # 強制將 X 軸標籤依照「起跑至終點」的標準賽事順序重排
+                            # 強制將 X 軸標籤依照「01. 起跑->H1」到「11. H10->終點」嚴格排序
                             existing_indices = df_plot.index.tolist()
                             sorted_index = [seg for seg in ORDERED_SEGMENTS if seg in existing_indices] + [seg for seg in existing_indices if seg not in ORDERED_SEGMENTS]
                             df_plot = df_plot.reindex(sorted_index)
