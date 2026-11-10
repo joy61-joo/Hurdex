@@ -1595,7 +1595,7 @@ elif page == "雙影同步 Dual Video Sync":
 
             <div class="top-bar">
                 <button id="btnPlayAlign" class="btn-align-play">從對齊點同步播放 Sync Play</button>
-                <button id="btnPlayDual" class="btn-sync">同步暫停/播放</button>
+                <button id="btnPlayDual" class="btn-sync">暫停/播放</button>
                 <button id="btnResetDual" class="btn-reset">時間歸零 Reset Time</button>
                 <button id="btnSnapDual" class="btn-snap">擷取雙影對比畫面 Capture Dual</button>
             </div>
