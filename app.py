@@ -1606,8 +1606,7 @@ elif page == "雙影同步 Dual Video Sync":
                             "image_b64": captured_dual_img, "sync_data": json.loads(captured_dual_json), "saved_at": str(datetime.datetime.now())
                         })
                         st.success("儲存成功！")
-
-# ==================== 【頁面 7：跨期數據對比 (加入 0.01 秒精細度切換)】 ====================
+# ==================== 【頁面 7：跨期數據對比 (預設以「速度 m/s」繪製折線圖)】 ====================
 elif page == "跨期數據對比 Longitudinal Comparison":
     st.title("跨期數據對比分析 Longitudinal Comparison Analysis")
     st.markdown("---")
@@ -1641,24 +1640,19 @@ elif page == "跨期數據對比 Longitudinal Comparison":
                     selected_recs = sorted([rec_options[k] for k in selected_keys], key=lambda x: x[5])
 
                     if mod_choice == "欄間秒數及速度計算 Hurdle Time & Speed Calculation":
-                        # 新增 0.01 秒為預設推薦選項
-                        unit_choice = st.radio(
-                            "選擇圖表縱軸顯示單位：", 
-                            ["0.01 秒 (百分秒) [推薦：田徑標準，視覺差異極明顯]", "毫秒 (ms)", "標準秒 (s)"], 
+                        chart_metric = st.radio(
+                            "選擇折線圖展示指標：", 
+                            ["分段平均速度 (m/s) [預設推薦：數字越高越好，速降趨勢極清晰]", "單段耗時 (0.01秒 / 百分秒)", "單段耗時 (秒 s)"], 
                             horizontal=True
                         )
-                        
-                        if "0.01 秒" in unit_choice:
-                            scale_factor = 100.0
-                            unit_symbol = " (0.01s)"
-                        elif "毫秒" in unit_choice:
-                            scale_factor = 1000.0
-                            unit_symbol = " ms"
-                        else:
-                            scale_factor = 1.0
-                            unit_symbol = " s"
 
-                        plot_dict_split = {}
+                        # 【標準欄間時序】：確保 X 軸由左至右嚴格按照比賽順序排列
+                        ORDERED_SEGMENTS = [
+                            "起跑->H1", "H1->H2", "H2->H3", "H3->H4", "H4->H5",
+                            "H5->H6", "H6->H7", "H7->H8", "H8->H9", "H9->H10", "H10->終點"
+                        ]
+
+                        plot_dict = {}
                         table_data = {}
                         for rec in selected_recs:
                             tm = json.loads(rec[4]).get("timer_metrics", {})
@@ -1667,25 +1661,79 @@ elif page == "跨期數據對比 Longitudinal Comparison":
 
                             for s in splits:
                                 seg = s.get("segment", "")
-                                try: split_val = float(s.get("split_sec", "0"))
-                                except ValueError: split_val = 0.0
+                                try: split_sec = float(s.get("split_sec", "0"))
+                                except ValueError: split_sec = 0.0
 
-                                if seg not in plot_dict_split: plot_dict_split[seg] = {}
-                                # 計算轉換後的數值
-                                val_scaled = round(split_val * scale_factor, 2)
-                                plot_dict_split[seg][rec_label] = val_scaled
+                                try: speed_ms = float(s.get("speed_ms", "0"))
+                                except ValueError: speed_ms = 0.0
 
+                                if seg not in plot_dict: plot_dict[seg] = {}
                                 if seg not in table_data: table_data[seg] = {}
-                                table_data[seg][rec_label] = f"單段 {s.get('split_sec')}s ({val_scaled}{unit_symbol}) ｜ 累積 {s.get('cum_sec')}s ｜ 速度 {s.get('speed_ms')} m/s"
 
-                        st.markdown(f"##### 跨期分段單段時間變化趨勢折線圖 (單位：{unit_symbol.strip()})")
-                        if plot_dict_split:
-                            df_split = pd.DataFrame.from_dict(plot_dict_split, orient='index')
-                            st.line_chart(df_split)
+                                # 依選定指標設定 Y 軸數值
+                                if "分段平均速度" in chart_metric:
+                                    plot_dict[seg][rec_label] = round(speed_ms, 2)
+                                elif "0.01秒" in chart_metric:
+                                    plot_dict[seg][rec_label] = round(split_sec * 100.0, 2)
+                                else:
+                                    plot_dict[seg][rec_label] = round(split_sec, 3)
+
+                                table_data[seg][rec_label] = f"速度 {speed_ms:.2f} m/s ｜ 單段 {s.get('split_sec')}s ｜ 累積 {s.get('cum_sec')}s"
+
+                        unit_label = "m/s" if "分段平均速度" in chart_metric else ("0.01s" if "0.01秒" in chart_metric else "s")
+                        st.markdown(f"##### 跨期分段速度與耗時變化趨勢圖 (單位：{unit_label})")
+                        if plot_dict:
+                            df_plot = pd.DataFrame.from_dict(plot_dict, orient='index')
+                            
+                            # 強制依照起跑至終點排定 X 軸順序
+                            existing_indices = df_plot.index.tolist()
+                            sorted_index = [seg for seg in ORDERED_SEGMENTS if seg in existing_indices] + [seg for seg in existing_indices if seg not in ORDERED_SEGMENTS]
+                            df_plot = df_plot.reindex(sorted_index)
+
+                            st.line_chart(df_plot)
 
                         st.markdown("##### 各段落耗時與平均速度對照表")
                         if table_data:
-                            st.dataframe(pd.DataFrame.from_dict(table_data, orient='index'), use_container_width=True)
+                            df_table = pd.DataFrame.from_dict(table_data, orient='index')
+                            existing_table_indices = df_table.index.tolist()
+                            sorted_table_index = [seg for seg in ORDERED_SEGMENTS if seg in existing_table_indices] + [seg for seg in existing_table_indices if seg not in ORDERED_SEGMENTS]
+                            df_table = df_table.reindex(sorted_table_index)
+                            st.dataframe(df_table, use_container_width=True)
+
+                    elif mod_choice == "關鍵影格角度量測 Keyframe Angle Measurement":
+                        plot_dict_angle = {}
+                        for rec in selected_recs:
+                            am = json.loads(rec[4]).get("angle_metrics", {})
+                            rec_label = f"{rec[5]} ({rec[3]})"
+                            angles = am.get("angles", []) if isinstance(am, dict) else am
+                            if isinstance(angles, list):
+                                for a in angles:
+                                    name = a.get("name", "未知名稱")
+                                    val_str = str(a.get("value", "0")).replace("°", "").strip()
+                                    try: val = float(val_str)
+                                    except ValueError: val = 0.0
+                                    if rec_label not in plot_dict_angle: plot_dict_angle[rec_label] = {}
+                                    plot_dict_angle[rec_label][name] = val
+
+                        st.markdown("##### 跨期角度變化趨勢折線圖 Angle Progression Line Chart")
+                        if plot_dict_angle:
+                            st.line_chart(pd.DataFrame.from_dict(plot_dict_angle, orient='index'))
+
+                        st.markdown("##### 跨期畫面與角度數據明細 Comparison Cards")
+                        col_arr = st.columns(len(selected_recs))
+                        for idx, rec in enumerate(selected_recs):
+                            details = json.loads(rec[4])
+                            with col_arr[idx]:
+                                st.markdown(f"**日期：{rec[5]}**")
+                                st.write(f"標題：{rec[3]}")
+                                if "image_b64" in details:
+                                    st.image(details["image_b64"], use_container_width=True)
+                                am = details.get("angle_metrics", {})
+                                angles = am.get("angles", []) if isinstance(am, dict) else am
+                                st.write(f"時間：`{am.get('rel_time_sec', '0.00')} 秒`")
+                                st.write(f"階段：`{am.get('phase_tag', '關鍵點')}`")
+                                if isinstance(angles, list):
+                                    for a in angles: st.write(f"• {a.get('name')}：`{a.get('value')}`")
 
 # ==================== 【頁面 8：課表紀錄】 ====================
 elif page == "課表紀錄 Training Plan":
