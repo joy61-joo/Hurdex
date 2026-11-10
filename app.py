@@ -1141,7 +1141,7 @@ elif page == "角度分析 Angle Analysis":
                     <div>
                         <video id="vidT" muted playsinline></video>
                         <input type="range" id="sliderT" min="0" max="100" value="0" step="0.01" style="width:100%; margin-top:8px;">
-                        <button id="btnTap" class="btn-tap">1. 紀錄起跑與起跳瞬間 (按 Space 或 Enter)</button>
+                        <button id="btnTap" class="btn-tap">1. 紀錄起跑與過欄瞬間 (按 Space 或 Enter)</button>
                     </div>
                     <div>
                         <table id="tb">
@@ -1156,6 +1156,11 @@ elif page == "角度分析 Angle Analysis":
                     const sliderT = document.getElementById('sliderT');
                     const btnTap = document.getElementById('btnTap');
                     let taps = [], chartObj = null, t0_h = 0.0;
+
+                    const segLabels = [
+                        "01. 起跑->H1", "02. H1->H2", "03. H2->H3", "04. H3->H4", "05. H4->H5",
+                        "06. H5->H6", "07. H6->H7", "08. H7->H8", "09. H8->H9", "10. H9->H10", "11. H10->終點"
+                    ];
 
                     function syncToStreamlit(el, val) {
                         if (!el) return;
@@ -1212,7 +1217,7 @@ elif page == "角度分析 Angle Analysis":
 
                         for (let i = 0; i < taps.length; i++) {
                             let cum = taps[i] - taps[0];
-                            let lbl = i === 0 ? '起跑 T0' : (i === 1 ? '起跑->H1' : (i === 11 ? 'H10->終點' : `H${i-1}->H${i}`));
+                            let lbl = i === 0 ? '起跑 T0' : segLabels[i - 1];
                             let dtStr = '-', spdStr = '-';
                             if (i > 0) {
                                 let dt = taps[i] - taps[i-1];
@@ -1237,7 +1242,7 @@ elif page == "角度分析 Angle Analysis":
                         for (let i = 1; i < taps.length; i++) {
                             let dt = taps[i] - taps[i-1];
                             let spd = dt > 0 ? (dists[i-1] / dt) : 0;
-                            splits.push({ segment: i === 1 ? '起跑->H1' : (i === 11 ? 'H10->終點' : `H${i-1}->H${i}`), cum_sec: (taps[i]-taps[0]).toFixed(2), split_sec: dt.toFixed(2), speed_ms: spd.toFixed(2) });
+                            splits.push({ segment: segLabels[i-1], cum_sec: (taps[i]-taps[0]).toFixed(2), split_sec: dt.toFixed(2), speed_ms: spd.toFixed(2) });
                         }
                         const textAreas = window.parent.document.querySelectorAll('textarea');
                         let targetTimerTA = null;
@@ -1404,7 +1409,7 @@ elif page == "殘影軌跡 Ghosting Track":
                         save_record(u["username"], u["team_code"], "攻欄至落地殘影軌跡 Ghosting Track", rec_title_ghost, {"image_b64": captured_ghost_img, "saved_at": str(datetime.datetime.now())})
                         st.success("儲存成功！")
 
-# ==================== 【頁面 6：雙影同步 (已新增各自獨立播放滑桿)】 ====================
+# ==================== 【頁面 6：雙影同步】 ====================
 elif page == "雙影同步 Dual Video Sync":
     st.title("雙影同步對比模組 Dual Video Sync Module")
     st.markdown("---")
@@ -1606,7 +1611,8 @@ elif page == "雙影同步 Dual Video Sync":
                             "image_b64": captured_dual_img, "sync_data": json.loads(captured_dual_json), "saved_at": str(datetime.datetime.now())
                         })
                         st.success("儲存成功！")
-# ==================== 【頁面 7：跨期數據對比 (預設以「速度 m/s」繪製折線圖)】 ====================
+
+# ==================== 【頁面 7：跨期數據對比 (已修正 X軸 排序與標籤連動)】 ====================
 elif page == "跨期數據對比 Longitudinal Comparison":
     st.title("跨期數據對比分析 Longitudinal Comparison Analysis")
     st.markdown("---")
@@ -1646,10 +1652,24 @@ elif page == "跨期數據對比 Longitudinal Comparison":
                             horizontal=True
                         )
 
-                        # 【標準欄間時序】：確保 X 軸由左至右嚴格按照比賽順序排列
+                        # 舊標籤與新帶編號標籤的對照表 (確保向下相容舊資料庫)
+                        SEG_MAP = {
+                            "起跑->H1": "01. 起跑->H1",
+                            "H1->H2": "02. H1->H2",
+                            "H2->H3": "03. H2->H3",
+                            "H3->H4": "04. H3->H4",
+                            "H4->H5": "05. H4->H5",
+                            "H5->H6": "06. H5->H6",
+                            "H6->H7": "07. H6->H7",
+                            "H7->H8": "08. H7->H8",
+                            "H8->H9": "09. H8->H9",
+                            "H9->H10": "10. H9->H10",
+                            "H10->終點": "11. H10->終點"
+                        }
+
                         ORDERED_SEGMENTS = [
-                            "起跑->H1", "H1->H2", "H2->H3", "H3->H4", "H4->H5",
-                            "H5->H6", "H6->H7", "H7->H8", "H8->H9", "H9->H10", "H10->終點"
+                            "01. 起跑->H1", "02. H1->H2", "03. H2->H3", "04. H3->H4", "05. H4->H5",
+                            "06. H5->H6", "07. H6->H7", "08. H7->H8", "09. H8->H9", "10. H9->H10", "11. H10->終點"
                         ]
 
                         plot_dict = {}
@@ -1660,7 +1680,9 @@ elif page == "跨期數據對比 Longitudinal Comparison":
                             rec_label = f"{rec[5]} ({rec[3]})"
 
                             for s in splits:
-                                seg = s.get("segment", "")
+                                raw_seg = s.get("segment", "")
+                                seg = SEG_MAP.get(raw_seg, raw_seg)
+
                                 try: split_sec = float(s.get("split_sec", "0"))
                                 except ValueError: split_sec = 0.0
 
@@ -1670,7 +1692,6 @@ elif page == "跨期數據對比 Longitudinal Comparison":
                                 if seg not in plot_dict: plot_dict[seg] = {}
                                 if seg not in table_data: table_data[seg] = {}
 
-                                # 依選定指標設定 Y 軸數值
                                 if "分段平均速度" in chart_metric:
                                     plot_dict[seg][rec_label] = round(speed_ms, 2)
                                 elif "0.01秒" in chart_metric:
@@ -1685,7 +1706,7 @@ elif page == "跨期數據對比 Longitudinal Comparison":
                         if plot_dict:
                             df_plot = pd.DataFrame.from_dict(plot_dict, orient='index')
                             
-                            # 強制依照起跑至終點排定 X 軸順序
+                            # 強制將 X 軸標籤依照「起跑至終點」的標準賽事順序重排
                             existing_indices = df_plot.index.tolist()
                             sorted_index = [seg for seg in ORDERED_SEGMENTS if seg in existing_indices] + [seg for seg in existing_indices if seg not in ORDERED_SEGMENTS]
                             df_plot = df_plot.reindex(sorted_index)
