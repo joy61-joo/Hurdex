@@ -9,6 +9,7 @@ import psycopg2
 import smtplib
 import subprocess
 import tempfile
+import mimetypes
 import altair as alt
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -1551,6 +1552,15 @@ elif page == "殘影軌跡 Ghosting Track":
                         st.success("儲存成功！")
 
 # ==================== 【頁面 6：雙影同步 (雙分頁：同步播放 + 雙影角度分析截取)】 ====================
+def get_base64_video(uploaded_file):
+    """將 Streamlit 上傳的影片檔轉換為 Base64 字串"""
+    bytes_data = uploaded_file.getvalue()
+    return base64.b64encode(bytes_data).decode('utf-8')
+
+def get_mime_type(filename):
+    """取得影片檔的 MIME 類型"""
+    mime_type, _ = mimetypes.guess_type(filename)
+    return mime_type if mime_type else "video/mp4"
 elif page == "雙影同步 Dual Video Sync":
     st.title("🎬 雙影同步與關鍵影格角度分析 Dual Video Sync & Angle Analysis")
     st.markdown("---")
