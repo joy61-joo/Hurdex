@@ -1611,8 +1611,7 @@ elif page == "雙影同步 Dual Video Sync":
                         save_record(u["username"], u["team_code"], "雙影同步 Dual Video Sync", rec_title_dual, {
                             "image_b64": captured_dual_img, "sync_data": json.loads(captured_dual_json), "saved_at": str(datetime.datetime.now())
                         })
-                        st.success("儲存成功！")
-# ==================== 【頁面 7：跨期數據對比 (已刪除預設推薦標示文字)】 ====================
+                        st.success("儲存成功！")# ==================== 【頁面 7：跨期數據對比 (乾淨標題選單、無ID/時間、Altair正確時序)】 ====================
 elif page == "跨期數據對比 Longitudinal Comparison":
     st.title("跨期數據對比分析 Longitudinal Comparison Analysis")
     st.markdown("---")
@@ -1637,7 +1636,7 @@ elif page == "跨期數據對比 Longitudinal Comparison":
             if not records:
                 st.warning(f"選手 {target_user} 在團隊中尚無 {mod_choice} 的歷史紀錄。")
             else:
-                # 【完全隱藏 ID】：純粹顯示紀錄標題 (若有同名自動加上次數標記如: 標題 (2))
+                # 【隱藏 ID 與時間】：純粹顯示紀錄標題 (同名自動加上編號如: 標題 (2))
                 title_counts = {}
                 rec_options = {}
                 for r in records:
@@ -1765,7 +1764,11 @@ elif page == "跨期數據對比 Longitudinal Comparison":
                                 st.write(f"時間：`{am.get('rel_time_sec', '0.00')} 秒`")
                                 st.write(f"階段：`{am.get('phase_tag', '關鍵點')}`")
                                 if isinstance(angles, list):
-                                    for a in angles: st.write(f"• {a.get('name')}：`{a.get('value')}`")elif page == "課表紀錄 Training Plan":
+                                    for a in angles:
+                                        st.write(f"• {a.get('name')}：`{a.get('value')}`")
+
+# ==================== 【頁面 8：課表紀錄】 ====================
+elif page == "課表紀錄 Training Plan":
     st.title("課表與訓練日誌紀錄 Training Plan & Daily Log")
     st.markdown("---")
 
