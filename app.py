@@ -17,6 +17,16 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
+def get_base64_video(uploaded_file):
+    """將 Streamlit 上傳的影片檔轉換為 Base64 字串"""
+    bytes_data = uploaded_file.getvalue()
+    return base64.b64encode(bytes_data).decode('utf-8')
+
+def get_mime_type(filename):
+    """取得影片檔的 MIME 類型"""
+    mime_type, _ = mimetypes.guess_type(filename)
+    return mime_type if mime_type else "video/mp4"
+
 # -------------------- 【頁面與全站 CSS 配置】 --------------------
 st.set_page_config(page_title="HURDEX - 跨欄運動技術與防護分析系統", layout="wide", initial_sidebar_state="expanded")
 
@@ -1549,18 +1559,7 @@ elif page == "殘影軌跡 Ghosting Track":
                     if st.form_submit_button("儲存至團隊資料庫"):
                         u = st.session_state["user_info"]
                         save_record(u["username"], u["team_code"], "攻欄至落地殘影軌跡 Ghosting Track", rec_title_ghost, {"image_b64": captured_ghost_img, "saved_at": str(datetime.datetime.now())})
-                        st.success("儲存成功！")
-
-# ==================== 【頁面 6：雙影同步 (雙分頁：同步播放 + 雙影角度分析截取)】 ====================
-def get_base64_video(uploaded_file):
-    """將 Streamlit 上傳的影片檔轉換為 Base64 字串"""
-    bytes_data = uploaded_file.getvalue()
-    return base64.b64encode(bytes_data).decode('utf-8')
-
-def get_mime_type(filename):
-    """取得影片檔的 MIME 類型"""
-    mime_type, _ = mimetypes.guess_type(filename)
-    return mime_type if mime_type else "video/mp4"
+                        st.success("儲存成功# ==================== 【頁面 6：雙影同步 Dual Video Sync】 ====================
 elif page == "雙影同步 Dual Video Sync":
     st.title("🎬 雙影同步與關鍵影格角度分析 Dual Video Sync & Angle Analysis")
     st.markdown("---")
@@ -1683,7 +1682,7 @@ elif page == "雙影同步 Dual Video Sync":
 
         # ------------------ 分頁 2：雙影角度分析與截取 ------------------
         with tab_dual_angle:
-            st.info("💡 **操作指南**：在下方兩部影片中暫停於關鍵動作，點擊「擷取畫面至畫布」，即可使用滑鼠連續點擊 3 點進行肢體夾角量測，完成後點擊「合成並上傳至團隊紀錄」。")
+            st.info("💡 **操作指南**：在下方兩部影片中暫停於關鍵動作，點擊「擷取畫面至畫布」，即可使用滑鼠點擊 3 點進行角度量測，完成後點擊「合成並上傳至團隊紀錄」。")
             
             dual_angle_html = f"""
             <!DOCTYPE html>
@@ -1782,7 +1781,6 @@ elif page == "雙影同步 Dual Video Sync":
 
                         if (img) ctx.putImageData(img, 0, 0);
 
-                        // 畫點與連線
                         ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 3; ctx.fillStyle = '#f59e0b';
                         for(let i=0; i<pts.length; i++) {{
                             ctx.beginPath(); ctx.arc(pts[i].x, pts[i].y, 5, 0, Math.PI*2); ctx.fill(); ctx.stroke();
@@ -1793,23 +1791,19 @@ elif page == "雙影同步 Dual Video Sync":
                         }} else if (pts.length === 3) {{
                             ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y); ctx.lineTo(pts[1].x, pts[1].y); ctx.lineTo(pts[2].x, pts[2].y); ctx.stroke();
 
-                            // 計算夾角 (以第 2 點 pts[1] 為頂點)
                             const rad1 = Math.atan2(pts[0].y - pts[1].y, pts[0].x - pts[1].x);
                             const rad2 = Math.atan2(pts[2].y - pts[1].y, pts[2].x - pts[1].x);
                             let deg = Math.abs((rad1 - rad2) * (180 / Math.PI));
                             if (deg > 180) deg = 360 - deg;
-                            deg = roundVal(deg, 1);
+                            deg = Math.round(deg * 10) / 10;
 
                             if (tag === 'A') angleA = deg; else angleB = deg;
 
-                            // 標示文字
                             ctx.fillStyle = '#38bdf8'; ctx.font = 'bold 16px sans-serif';
                             ctx.fillText(deg + '°', pts[1].x + 10, pts[1].y - 10);
                             document.getElementById((tag==='A')?'infoA':'infoB').innerText = '夾角量測結果：' + deg + '°';
                         }}
                     }}
-
-                    function roundVal(v, p) {{ return Math.round(v * Math.pow(10, p)) / Math.pow(10, p); }}
 
                     function mergeAndUpload() {{
                         const outCan = document.createElement('canvas');
@@ -1831,10 +1825,6 @@ elif page == "雙影同步 Dual Video Sync":
                             timestamp: new Date().toISOString()
                         }});
 
-                        // 傳送回 Streamlit 文字區域
-                        window.parent.postMessage({{ type: 'streamlit:setComponentValue', value: mergedB64 }}, '*');
-                        
-                        // 寫入 Streamlit Text Area 變數
                         const imgBox = window.parent.document.querySelector('textarea[aria-label="dual_img_b64"]');
                         const jsonBox = window.parent.document.querySelector('textarea[aria-label="dual_data_json"]');
                         if (imgBox) {{ imgBox.value = mergedB64; imgBox.dispatchEvent(new Event('input', {{ bubbles: true }})); }}
@@ -1866,7 +1856,9 @@ elif page == "雙影同步 Dual Video Sync":
                         })
                         st.success("成功儲存至團隊歷史數據庫！")
                         st.rerun()
-                        
+
+# ==================== 【頁面 7：跨期數據對比】 ====================
+elif page == "跨期數據對比 Longitudinal Comparison":
 # ==================== 【頁面 7：跨期數據對比 (已精簡為「速度 m/s」與「耗時 秒 s」雙指標)】 ====================
 elif page == "跨期數據對比 Longitudinal Comparison":
     st.title("跨期數據對比分析 Longitudinal Comparison Analysis")
