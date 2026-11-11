@@ -2358,12 +2358,15 @@ elif page == "課表紀錄 Training Plan":
             else:
                 target_athlete = user["username"]
 
-           # 自動載入上一次紀錄的傷病部位與腳位
+            # 自動載入上一次紀錄的傷病部位
             if "dyn_injuries_user" not in st.session_state or st.session_state["dyn_injuries_user"] != target_athlete:
                 try:
                     prev_plans = get_training_plans(target_athlete)
                 except Exception:
-                    prev_plans = []
+                    try:
+                        prev_plans = get_training_plans(username=target_athlete)
+                    except Exception:
+                        prev_plans = []
 
                 carried_injuries = []
                 if prev_plans:
@@ -2375,7 +2378,6 @@ elif page == "課表紀錄 Training Plan":
                             if inj.get("area"):
                                 carried_injuries.append({
                                     "area": inj.get("area"),
-                                    "leg_side": inj.get("leg_side", "不分腳位"),
                                     "level": inj.get("level", 0),
                                     "pain_types": inj.get("pain_types", []),
                                     "notes": inj.get("notes", "")
@@ -2384,29 +2386,19 @@ elif page == "課表紀錄 Training Plan":
                         pass
 
                 if not carried_injuries:
-                    carried_injuries = [{"area": "右大腿股四頭肌 Right Quadriceps", "leg_side": "不分腳位", "level": 0, "pain_types": [], "notes": ""}]
+                    carried_injuries = [{"area": "右大腿股四頭肌 Right Quadriceps", "level": 0, "pain_types": [], "notes": ""}]
 
                 st.session_state["dyn_injuries"] = carried_injuries
                 st.session_state["dyn_injuries_user"] = target_athlete
 
-                if not carried_injuries:
-                    carried_injuries = [{"area": "右大腿股四頭肌 Right Quadriceps", "leg_side": "不分腳位", "level": 0, "pain_types": [], "notes": ""}]
-
-                st.session_state["dyn_injuries"] = carried_injuries
-                st.session_state["dyn_injuries_user"] = target_athlete
-
-            # 選單選項定義
+            # 選單選項定義（已將腳踝與腳底獨立拆分）
             BODY_PART_OPTIONS = [
                 "頭頸部 Head & Neck", "右肩/三角肌 Right Shoulder Deltoid", "左肩/三角肌 Left Shoulder Deltoid",
                 "胸大肌 Pectoralis Major", "腹直肌/核心 Rectus Abdominis", "下背/腰椎肌群 Lower Back Lumbar",
                 "臀大肌 Gluteus Maximus", "右大腿股四頭肌 Right Quadriceps", "左大腿股四頭肌 Left Quadriceps",
                 "右大腿後側膕繩肌 Right Hamstrings", "左大腿後側膕繩肌 Left Hamstrings", "右膝/髕腱 Right Patellar Tendon",
                 "左膝/髕腱 Left Patellar Tendon", "右小腿/跟腱 Right Calf & Achilles", "左小腿/跟腱 Left Calf & Achilles",
-                "右腳踝/足底 Right Ankle & Plantar", "左腳踝/足底 Left Ankle & Plantar"
-            ]
-
-            LEG_SIDE_OPTIONS = [
-                "起跨腳 (Lead Leg)", "擺動腳 (Trail Leg)", "雙側皆有", "不分腳位"
+                "右腳踝 Right Ankle", "左腳踝 Left Ankle", "右腳底 Right Plantar/Sole", "左腳底 Left Plantar/Sole"
             ]
 
             PAIN_NATURE_OPTIONS = [
@@ -2445,7 +2437,7 @@ elif page == "課表紀錄 Training Plan":
                 resting_hr = st.number_input("靜息心率 Heart Rate (bpm)", min_value=40, max_value=220, value=65, key="log_hr")
 
             st.markdown("<br>", unsafe_allow_html=True)
-            st.markdown("###### 部位疼痛評估、受力腳位與 13 項標準化疼痛性質追蹤 (前次傷病已自動載入)")
+            st.markdown("###### 傷害追蹤")
 
             injuries_input_data = []
             to_delete_idx = None
@@ -2454,9 +2446,6 @@ elif page == "課表紀錄 Training Plan":
                 with c_sel1:
                     default_area_idx = BODY_PART_OPTIONS.index(item["area"]) if item["area"] in BODY_PART_OPTIONS else 0
                     selected_area = st.selectbox(f"痛點部位 #{idx+1}", BODY_PART_OPTIONS, index=default_area_idx, key=f"sel_area_{idx}")
-                    
-                    default_leg_idx = LEG_SIDE_OPTIONS.index(item.get("leg_side", "不分腳位")) if item.get("leg_side") in LEG_SIDE_OPTIONS else 3
-                    selected_leg = st.selectbox(f"受力腳位 #{idx+1}", LEG_SIDE_OPTIONS, index=default_leg_idx, key=f"sel_leg_{idx}")
                 with c_sel2:
                     selected_lvl = st.slider(f"疼痛等級 (VAS 0-10)", 0, 10, item["level"], key=f"sel_lvl_{idx}")
                     st.markdown("<br>", unsafe_allow_html=True)
@@ -2477,7 +2466,6 @@ elif page == "課表紀錄 Training Plan":
                 injuries_input_data.append({
                     "id": idx + 1,
                     "area": selected_area,
-                    "leg_side": selected_leg,
                     "level": selected_lvl,
                     "pain_types": selected_pain_types,
                     "notes": selected_note
@@ -2488,7 +2476,7 @@ elif page == "課表紀錄 Training Plan":
                 st.rerun()
 
             if st.button("新增身體部位痛點 Add Muscle Region", key="add_more_inj_btn"):
-                st.session_state["dyn_injuries"].append({"area": "右膝/髕腱 Right Patellar Tendon", "leg_side": "不分腳位", "level": 0, "pain_types": [], "notes": ""})
+                st.session_state["dyn_injuries"].append({"area": "右膝/髕腱 Right Patellar Tendon", "level": 0, "pain_types": [], "notes": ""})
                 st.rerun()
 
             st.markdown("---")
@@ -2694,7 +2682,13 @@ elif page == "課表紀錄 Training Plan":
             else:
                 query_user = user["username"]
 
-            plans = get_training_plans(username=query_user)
+            try:
+                plans = get_training_plans(query_user)
+            except Exception:
+                try:
+                    plans = get_training_plans(username=query_user)
+                except Exception:
+                    plans = []
 
             if not plans:
                 st.warning("尚無訓練日誌紀錄 No Training Log Records")
@@ -2746,20 +2740,19 @@ elif page == "課表紀錄 Training Plan":
 
                             col_inj_text, col_inj_map = st.columns([1.2, 0.8])
                             with col_inj_text:
-                                st.markdown("**痛點部位、腳位與 13 項疼痛性質紀錄 Injury Details：**")
+                                st.markdown("**痛點部位與疼痛性質紀錄 Injury Details：**")
                                 if inj_list:
                                     for inj in inj_list:
                                         lvl = inj.get("level", 0)
                                         area = inj.get("area", f"痛點 #{inj.get('id',1)}")
-                                        leg = inj.get("leg_side", "不分腳位")
                                         ptypes = inj.get("pain_types", [])
                                         ptypes_str = f" ｜ 性質: {', '.join(ptypes)}" if ptypes else ""
                                         n_str = inj.get("notes", "")
                                         n_fmt = f" ({n_str})" if n_str else ""
                                         
-                                        if lvl >= 5: st.markdown(f"• :red[**{area}** ({leg}) ｜ 疼痛 VAS: {lvl}/10{ptypes_str}{n_fmt}]")
-                                        elif lvl > 0: st.markdown(f"• :orange[**{area}** ({leg}) ｜ 疼痛 VAS: {lvl}/10 (復原中){ptypes_str}{n_fmt}]")
-                                        else: st.markdown(f"• :green[**{area}** ({leg}) ｜ 疼痛 VAS: 0/10 (痊癒){ptypes_str}{n_fmt}]")
+                                        if lvl >= 5: st.markdown(f"• :red[**{area}** ｜ 疼痛 VAS: {lvl}/10{ptypes_str}{n_fmt}]")
+                                        elif lvl > 0: st.markdown(f"• :orange[**{area}** ｜ 疼痛 VAS: {lvl}/10 (復原中){ptypes_str}{n_fmt}]")
+                                        else: st.markdown(f"• :green[**{area}** ｜ 疼痛 VAS: 0/10 (痊癒){ptypes_str}{n_fmt}]")
                                 else: st.markdown(":green[良好無傷病 No Active Injury]")
 
                             with col_inj_map:
@@ -2777,7 +2770,6 @@ elif page == "課表紀錄 Training Plan":
                             if st.button(f"刪除日誌 Log ID {p_id}", key=f"del_plan_{p_id}"):
                                 delete_training_plan(p_id)
                                 st.rerun()
-
 # ==================== 【頁面 7：歷史分析紀錄】 ====================
 elif page == "歷史分析紀錄 History Records":
     st.title("歷史分析紀錄庫 History Records Repository")
