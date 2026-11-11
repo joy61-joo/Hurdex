@@ -82,8 +82,7 @@ def generate_random_team_code(length=6):
 def init_db():
     conn = get_db_connection()
     c = conn.cursor()
-    # 1. 使用者資料表
-    c.execute('''
+    c.execute("""
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
             password_hash TEXT NOT NULL,
@@ -92,17 +91,15 @@ def init_db():
             email TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT ''
         )
-    ''')
-    # 2. 密碼重設 Token
-    c.execute('''
+    """)
+    c.execute("""
         CREATE TABLE IF NOT EXISTS reset_tokens (
             username TEXT PRIMARY KEY,
             otp_code TEXT NOT NULL,
             expires_at TEXT NOT NULL
         )
-    ''')
-    # 3. 動作分析紀錄表
-    c.execute('''
+    """)
+    c.execute("""
         CREATE TABLE IF NOT EXISTS records (
             id SERIAL PRIMARY KEY,
             username TEXT NOT NULL,
@@ -113,9 +110,8 @@ def init_db():
             timestamp TEXT NOT NULL,
             FOREIGN KEY (username) REFERENCES users (username)
         )
-    ''')
-    # 4. 訓練日誌表
-    c.execute('''
+    """)
+    c.execute("""
         CREATE TABLE IF NOT EXISTS training_plans (
             id SERIAL PRIMARY KEY,
             username TEXT NOT NULL,
@@ -127,9 +123,8 @@ def init_db():
             notes TEXT NOT NULL,
             created_at TEXT NOT NULL
         )
-    ''')
-    # 5. 比賽行事曆表
-    c.execute('''
+    """)
+    c.execute("""
         CREATE TABLE IF NOT EXISTS competitions (
             id SERIAL PRIMARY KEY,
             username TEXT NOT NULL,
@@ -141,9 +136,8 @@ def init_db():
             notes TEXT DEFAULT '',
             created_at TEXT NOT NULL
         )
-    ''')
-    # 6. 運動防護與傷勢報告表
-    c.execute('''
+    """)
+    c.execute("""
         CREATE TABLE IF NOT EXISTS injury_feedbacks (
             id SERIAL PRIMARY KEY,
             athlete_username TEXT NOT NULL,
@@ -155,9 +149,8 @@ def init_db():
             treatment_advice TEXT NOT NULL,
             created_at TEXT NOT NULL
         )
-    ''')
+    """)
 
-    # 【資料庫自動修復移轉 Migration】
     migration_sqls = [
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS team_code TEXT NOT NULL DEFAULT 'DEFAULT_TEAM'",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT NOT NULL DEFAULT ''",
@@ -731,7 +724,7 @@ elif page == "運動防護與傷勢評估 Injury & Defense Feedback":
                         st.write(f"• **評估防護員**: {t_user}")
                         st.write(f"• **復健處置與建議**: \n```text\n{advice}\n```")
 
-# ==================== 【頁面 3：比賽行事曆 (賽事總覽依日期由近到遠排序)】 ====================
+# ==================== 【頁面 3：比賽行事曆】 ====================
 elif page == "比賽行事曆 Competition Calendar":
     st.title("🏆 團隊比賽行事曆與賽事倒數")
     st.markdown("---")
@@ -2066,7 +2059,7 @@ elif page == "雙影同步 Dual Video Sync":
                         st.success("成功儲存至團隊歷史數據庫！")
                         st.rerun()
 
-# ==================== 【頁面 7：跨期數據對比 (精簡雙指標)】 ====================
+# ==================== 【頁面 7：跨期數據對比】 ====================
 elif page == "跨期數據對比 Longitudinal Comparison":
     st.title("跨期數據對比分析 Longitudinal Comparison Analysis")
     st.markdown("---")
@@ -2326,9 +2319,10 @@ elif page == "課表紀錄 Training Plan":
 
             st.markdown("<br>", unsafe_allow_html=True)
             st.markdown("###### 傷害追蹤")
-injuries_input_data = []
-to_delete_idx = None
-for idx, item in enumerate(st.session_state["dyn_injuries"]):
+
+            injuries_input_data = []
+            to_delete_idx = None
+            for idx, item in enumerate(st.session_state["dyn_injuries"]):
                 c_sel1, c_sel2, c_sel3, c_sel4 = st.columns([1.5, 1.2, 1.6, 1.2])
                 with c_sel1:
                     default_area_idx = BODY_PART_OPTIONS.index(item["area"]) if item["area"] in BODY_PART_OPTIONS else 0
