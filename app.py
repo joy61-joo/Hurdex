@@ -2084,15 +2084,13 @@ elif page == "課表紀錄 Training Plan":
             else:
                 target_athlete = user["username"]
 
-            # 自動載入上一次紀錄的傷病部位與腳位
+           # 自動載入上一次紀錄的傷病部位與腳位
             if "dyn_injuries_user" not in st.session_state or st.session_state["dyn_injuries_user"] != target_athlete:
                 try:
-    prev_plans = get_training_plans(target_athlete)
-except Exception:
-    try:
-        prev_plans = get_training_plans(username=target_athlete)
-    except Exception:
-        prev_plans = []
+                    prev_plans = get_training_plans(target_athlete)
+                except Exception:
+                    prev_plans = []
+
                 carried_injuries = []
                 if prev_plans:
                     last_plan = prev_plans[-1]
@@ -2110,6 +2108,12 @@ except Exception:
                                 })
                     except Exception:
                         pass
+
+                if not carried_injuries:
+                    carried_injuries = [{"area": "右大腿股四頭肌 Right Quadriceps", "leg_side": "不分腳位", "level": 0, "pain_types": [], "notes": ""}]
+
+                st.session_state["dyn_injuries"] = carried_injuries
+                st.session_state["dyn_injuries_user"] = target_athlete
 
                 if not carried_injuries:
                     carried_injuries = [{"area": "右大腿股四頭肌 Right Quadriceps", "leg_side": "不分腳位", "level": 0, "pain_types": [], "notes": ""}]
