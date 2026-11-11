@@ -470,17 +470,33 @@ def save_training_plan(username, team_code, plan_date, category, content, intens
     conn.commit()
     c.close(); conn.close()
 
-def get_training_plans(team_code, username=None):
+def get_training_plans(*args, **kwargs):
+    """
+    全相容性訓練課表查詢函數
+    支援 get_training_plans(username), get_training_plans(team_code, username),
+    get_training_plans(username=...) 等所有呼叫方式
+    """
     conn = get_db_connection()
     c = conn.cursor()
-    query = "SELECT id, username, plan_date, category, content, intensity, notes, created_at FROM training_plans WHERE team_code = %s"
-    params = [team_code]
-    if username:
-        query += " AND username = %s"; params.append(username)
+    
+    username = kwargs.get("username", None)
+    if username is None and len(args) > 0:
+        if len(args) == 1:
+            username = args[0]
+        elif len(args) >= 2:
+            username = args[1]
+            
+    query = "SELECT id, username, plan_date, category, content, intensity, notes, created_at FROM training_plans"
+    params = []
+    if username and str(username).strip() and str(username) != "None":
+        query += " WHERE username = %s"
+        params.append(str(username))
     query += " ORDER BY plan_date ASC, id ASC"
+    
     c.execute(query, tuple(params))
     rows = c.fetchall()
-    c.close(); conn.close()
+    c.close()
+    conn.close()
     return rows
 
 def delete_training_plan(plan_id):
