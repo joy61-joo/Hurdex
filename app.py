@@ -2786,7 +2786,7 @@ elif page == "歷史分析紀錄 History Records":
 
             for date_key in sorted(grouped_records.keys(), reverse=True):
                 day_recs = grouped_records[date_key]
-                with st.expander(f"日期 Date：{date_key} （共 {len(day_recs)} 筆紀錄）"):
+                with st.expander(f"📅 日期 Date：{date_key} （共 {len(day_recs)} 筆紀錄）"):
                     for rec in day_recs:
                         rec_id, rec_user, rec_module, rec_title, rec_details_str, rec_time = rec
                         try:
@@ -2795,17 +2795,43 @@ elif page == "歷史分析紀錄 History Records":
                             rec_details = {}
 
                         st.markdown(f"#### [{rec_module}] {rec_title}")
-                        st.write(f"建立者 Creator：`{rec_user}` ｜ 上傳時間 Upload Time：`{rec_time}`")
 
-                        col_d1, col_d2 = st.columns([1.2, 0.8])
+                        # 採用左右雙欄位對齊 (左邊：圖片與分析筆記 / 右邊：數據明細)
+                        col_d1, col_d2 = st.columns([1, 1])
+
+                        # ------------------ 左欄：截圖與筆記輸入 ------------------
                         with col_d1:
-                            if isinstance(rec_details, dict) and "image_b64" in rec_details:
+                            if isinstance(rec_details, dict) and rec_details.get("image_b64"):
                                 st.image(rec_details["image_b64"], caption="畫面截圖 Composite Image", use_container_width=True)
-                            elif isinstance(rec_details, dict):
-                                st.write("原始影片檔名: " + str(rec_details.get("video_filename", "未指定")))
 
+                            st.markdown("##### 📝 動作分析筆記與教練叮嚀 Analysis Notes")
+                            current_notes = rec_details.get("notes", "") if isinstance(rec_details, dict) else ""
+                            
+                            note_input = st.text_area(
+                                "輸入或修改本筆紀錄的檢討與建議 Notes & Comments",
+                                value=current_notes,
+                                height=110,
+                                key=f"note_input_{rec_id}"
+                            )
+                            
+                            col_b1, col_b2 = st.columns([1, 1])
+                            with col_b1:
+                                if st.button("💾 儲存筆記 Save Note", key=f"save_note_btn_{rec_id}", use_container_width=True):
+                                    if isinstance(rec_details, dict):
+                                        rec_details["notes"] = note_input
+                                        update_record_details(rec_id, rec_details)
+                                        st.success("筆記已成功更新至資料庫！")
+                                        st.rerun()
+
+                            if is_coach or rec_user == user["username"]:
+                                with col_b2:
+                                    if st.button(f"🗑️ 刪除紀錄 ID {rec_id}", key=f"del_btn_{rec_id}", use_container_width=True):
+                                        delete_record(rec_id)
+                                        st.rerun()
+
+                        # ------------------ 右欄：數據明細 ------------------
                         with col_d2:
-                            st.markdown("##### 數據明細 Data Details：")
+                            st.markdown("##### 📊 數據明細 Data Details")
                             
                             if isinstance(rec_details, dict):
                                 # 1. 關鍵影格角度量測解析
@@ -2861,32 +2887,6 @@ elif page == "歷史分析紀錄 History Records":
                                         else:
                                             st.caption("⚠️ 尚無分段數據明細 No split details found")
 
-                        # -------------------- 【分析筆記與註記區塊】 --------------------
-                        st.markdown("##### 📝 動作分析筆記與教練叮嚀 Analysis Notes")
-                        current_notes = rec_details.get("notes", "") if isinstance(rec_details, dict) else ""
-                        
-                        note_input = st.text_area(
-                            "輸入或修改本筆紀錄的檢討與建議 Notes & Comments",
-                            value=current_notes,
-                            height=100,
-                            key=f"note_input_{rec_id}"
-                        )
-                        
-                        col_btn1, col_btn2 = st.columns([0.3, 0.7])
-                        with col_btn1:
-                            if st.button("💾 儲存筆記 Save Note", key=f"save_note_btn_{rec_id}", use_container_width=True):
-                                if isinstance(rec_details, dict):
-                                    rec_details["notes"] = note_input
-                                    update_record_details(rec_id, rec_details)
-                                    st.success("筆記已成功更新至資料庫！Note Updated!")
-                                    st.rerun()
-
-                        if is_coach or rec_user == user["username"]:
-                            with col_btn2:
-                                if st.button(f"🗑️ 刪除整筆紀錄 ID {rec_id}", key=f"del_btn_{rec_id}"):
-                                    delete_record(rec_id)
-                                    st.rerun()
-                                        
                         st.markdown("---")
 
 # ==================== 【頁面 10：未來擴充規劃】 ====================
