@@ -2370,27 +2370,30 @@ elif page == "課表紀錄 Training Plan":
             st.markdown("---")
             st.markdown("##### 3. 課表內容與自主備註 Plan Details & Notes")
             content = st.text_area("課表細節與組數規劃 Plan Details & Sets", height=120, key="log_content")
-            user_notes = st.text_area("動作感覺與教練叮嚀 Notes & Feedback", height=80, key="log_user_notes")
-
-            if st.button("儲存訓練日誌 Save Training Log", key="btn_save_training_log", use_container_width=True):
+            user_notes = st.text_area("動作感覺與教練叮嚀 Notesif st.button("儲存訓練日誌 Save Training Log", key="btn_save_training_log", use_container_width=True):
                 if content.strip():
                     extra_log_info = {
-                        "duration_min": duration_min, "rpe_feeling": rpe_feeling, "weather_env": weather_env,
-                        "fatigue_score": fatigue_score, "sleep_hours": sleep_hours, "sleep_mins": sleep_mins,
-                        "total_sleep_hr": round(total_sleep_hr, 2), "resting_hr": resting_hr,
+                        "duration_min": duration_min, 
+                        "rpe_feeling": rpe_feeling, 
+                        "weather_env": weather_env,
+                        "fatigue_score": fatigue_score, 
+                        "sleep_hours": sleep_hours, 
+                        "sleep_mins": sleep_mins,
+                        "total_sleep_hr": round(total_sleep_hr, 2), 
+                        "resting_hr": resting_hr,
                         "injuries_list": injuries_input_data,
                         "body_map_img_b64": captured_body_map_img,
                         "user_notes": user_notes
                     }
-                   save_training_plan(
-    target_athlete, 
-    user["team_code"], # 👈 補上團隊碼 team_code
-    str(plan_date), 
-    category, 
-    content, 
-    rpe_feeling, 
-    json.dumps(extra_log_info, ensure_ascii=False)
-)
+                    save_training_plan(
+                        target_athlete,
+                        user["team_code"],
+                        str(plan_date),
+                        category,
+                        content,
+                        rpe_feeling,
+                        json.dumps(extra_log_info, ensure_ascii=False)
+                    )
                     
                     if "dyn_injuries_user" in st.session_state:
                         del st.session_state["dyn_injuries_user"]
