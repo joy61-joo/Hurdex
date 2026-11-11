@@ -2382,7 +2382,15 @@ elif page == "課表紀錄 Training Plan":
                         "body_map_img_b64": captured_body_map_img,
                         "user_notes": user_notes
                     }
-                    save_training_plan(target_athlete, str(plan_date), category, content, rpe_feeling, json.dumps(extra_log_info, ensure_ascii=False))
+                   save_training_plan(
+    target_athlete, 
+    user["team_code"], # 👈 補上團隊碼 team_code
+    str(plan_date), 
+    category, 
+    content, 
+    rpe_feeling, 
+    json.dumps(extra_log_info, ensure_ascii=False)
+)
                     
                     if "dyn_injuries_user" in st.session_state:
                         del st.session_state["dyn_injuries_user"]
