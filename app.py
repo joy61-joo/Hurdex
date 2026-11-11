@@ -2328,7 +2328,7 @@ elif page == "課表紀錄 Training Plan":
             st.markdown("###### 傷害追蹤")
 injuries_input_data = []
 to_delete_idx = None
-            for idx, item in enumerate(st.session_state["dyn_injuries"]):
+for idx, item in enumerate(st.session_state["dyn_injuries"]):
                 c_sel1, c_sel2, c_sel3, c_sel4 = st.columns([1.5, 1.2, 1.6, 1.2])
                 with c_sel1:
                     default_area_idx = BODY_PART_OPTIONS.index(item["area"]) if item["area"] in BODY_PART_OPTIONS else 0
