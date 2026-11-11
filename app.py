@@ -180,7 +180,24 @@ def init_db():
 # -------------------- 【帳號與發訊認證 Logic】 --------------------
 def hash_password(password):
     return hashlib.sha256(password.encode('utf-8')).hexdigest()
-
+    
+def delete_user_account(username):
+    """
+    刪除使用者帳號及其關聯之所有歷史紀錄與課表
+    """
+    conn = get_db_connection()
+    c = conn.cursor()
+    
+    # 刪除使用者主帳號
+    c.execute("DELETE FROM users WHERE username = %s", (username,))
+    
+    # 一併清理該使用者的歷史紀錄與課表
+    c.execute("DELETE FROM records WHERE username = %s", (username,))
+    c.execute("DELETE FROM training_plans WHERE username = %s", (username,))
+    
+    conn.commit()
+    c.close()
+    conn.close()
 def register_user(username, password, role, team_code, email):
     username = username.strip()
     team_code = team_code.strip().upper()
@@ -597,140 +614,7 @@ nav_options = [
 
 page = st.sidebar.radio("請選擇功能模組：", nav_options)
 
-# ==================== 【頁面 1：系統首頁】 ====================
-if page == "系統首頁 Home":
-    st.title("HURDEX - 跨欄運動技術與防護分析系統")
-    st.markdown("---")
-
-    if st.session_state["user_info"] is None:
-        col1, col2, col3 = st.columns([1, 1.8, 1])
-        with col2:
-            st.subheader("使用者登入、團隊註冊與密碼重設")
-            auth_mode = st.radio("選擇操作：", ["登入帳號 Login", "註冊帳號 (建立或加入團隊)", "忘記/重設密碼 Reset Password"], key="main_auth_mode")
-
-            if auth_mode == "登入帳號 Login":
-                login_user = st.text_input("使用者名稱 Username", key="main_login_u")
-                login_pw = st.text_input("密碼 Password", type="password", key="main_login_p")
-                if st.button("登入 Login", key="main_login_btn", use_container_width=True):
-                    if login_user and login_pw:
-                        success, result = check_login(login_user, login_pw)
-                        if success:
-                            st.session_state["user_info"] = result
-                            st.success(f"歡迎回來 {result['username']}！團隊碼：{result['team_code']}")
-                            st.rerun()
-                        else: st.error(result)
-                    else: st.warning("請輸入帳號與密碼")
-
-            elif auth_mode == "註冊帳號 (建立或加入團隊)":
-                st.markdown("##### 1. 設定個人帳號資訊")
-                reg_user = st.text_input("使用者名稱 Username", key="main_reg_u")
-                reg_email = st.text_input("電子信箱 Email", key="main_reg_email")
-                reg_pw = st.text_input("設定密碼 Password", type="password", key="main_reg_p")
-
-                reg_role = st.selectbox(
-                    "選擇您的身份權限", 
-                    ["player", "coach", "trainer"], 
-                    format_func=lambda x: {"player": "選手 Athlete", "coach": "教練 Coach", "trainer": "運動防護員 Trainer"}[x], 
-                    key="main_reg_role"
-                )
-
-                role_code_input = ""
-                if reg_role == "coach":
-                    role_code_input = st.text_input("教練驗證碼 Coach Secret Code", type="password", key="reg_coach_code")
-                elif reg_role == "trainer":
-                    role_code_input = st.text_input("防護員驗證碼 Trainer Secret Code", type="password", key="reg_trainer_code")
-
-                st.markdown("---")
-                st.markdown("##### 2. 團隊設定 (所有人皆可建立新團隊)")
-                team_action = st.radio("團隊模式：", ["建立全新團隊 (生成團隊碼)", "加入既有團隊"], key="reg_team_action")
-
-                if team_action == "建立全新團隊 (生成團隊碼)":
-                    if "gen_code" not in st.session_state:
-                        st.session_state["gen_code"] = generate_random_team_code()
-
-                    c_t1, c_t2 = st.columns([2, 1])
-                    with c_t1:
-                        final_team_code = st.text_input("生成的全新團隊碼", value=st.session_state["gen_code"], key="reg_team_code_create")
-                    with c_t2:
-                        st.markdown("<br>", unsafe_allow_html=True)
-                        if st.button("重新生成團隊碼", key="btn_regen_code"):
-                            st.session_state["gen_code"] = generate_random_team_code()
-                            st.rerun()
-                    st.info(f"💡 團隊建立後，您可以將團隊碼 `{final_team_code}` 提供給成員加入。")
-                else:
-                    final_team_code = st.text_input("請輸入要加入的團隊碼 Team Code (例: HRD-88A)", key="reg_team_code_join")
-
-                if st.button("確認註冊 Register", key="main_reg_btn", use_container_width=True):
-                    if reg_user and reg_pw and reg_email and final_team_code:
-                        if "@" not in reg_email or "." not in reg_email:
-                            st.error("電子信箱格式錯誤")
-                        elif reg_role == "coach" and role_code_input != COACH_SECRET_CODE:
-                            st.error("教練驗證碼錯誤")
-                        elif reg_role == "trainer" and role_code_input != TRAINER_SECRET_CODE:
-                            st.error("防護員驗證碼錯誤")
-                        else:
-                            ok, msg = register_user(reg_user, reg_pw, reg_role, final_team_code, reg_email)
-                            if ok: st.success(msg)
-                            else: st.error(msg)
-                    else: st.warning("請填寫所有必要欄位")
-
-            elif auth_mode == "忘記/重設密碼 Reset Password":
-                st.markdown("##### 步驟 1：索取 Email 驗證碼")
-                req_user = st.text_input("使用者名稱 Username", key="reset_req_u")
-                if st.button("發送驗證碼到信箱", key="btn_req_otp", use_container_width=True):
-                    if req_user:
-                        ok, msg = request_password_reset(req_user)
-                        if ok: st.info(msg)
-                        else: st.error(msg)
-
-                st.markdown("---")
-                st.markdown("##### 步驟 2：輸入驗證碼並設定新密碼")
-                reset_u = st.text_input("使用者名稱 Username", key="reset_confirm_u")
-                reset_otp = st.text_input("信箱 6 位數驗證碼 OTP", key="reset_otp_val")
-                new_pw = st.text_input("新密碼 New Password", type="password", key="reset_np")
-                confirm_pw = st.text_input("確認新密碼 Confirm Password", type="password", key="reset_cp")
-
-                if st.button("確認重設密碼", key="btn_confirm_reset", use_container_width=True):
-                    if reset_u and reset_otp and new_pw and confirm_pw:
-                        if new_pw != confirm_pw: st.error("兩次輸入密碼不一致")
-                        else:
-                            ok, msg = verify_and_reset_password(reset_u, reset_otp, new_pw)
-                            if ok: st.success(msg)
-                            else: st.error(msg)
-
-    else:
-        u = st.session_state["user_info"]
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            role_name = {"player": "選手 Athlete", "coach": "教練 Coach", "trainer": "運動防護員 Trainer"}.get(u['role'], u['role'])
-            st.success(f"當前登入：**{u['username']}** ｜ 信箱：**{u.get('email', '未設定')}** ｜ 身份：**{role_name}** ｜ 團隊碼：`{u['team_code']}`")
-            st.markdown("---")
-            st.subheader("帳號個人設定 Account Settings")
-            tab_edit_name, tab_edit_pw = st.tabs(["修改帳號名稱", "修改密碼"])
-            with tab_edit_name:
-                new_uname_input = st.text_input("新使用者名稱", value=u["username"], key="change_u_input")
-                if st.button("確認修改帳號名稱", key="btn_change_u", use_container_width=True):
-                    ok, msg = update_username(u["username"], new_uname_input)
-                    if ok:
-                        st.session_state["user_info"]["username"] = new_uname_input.strip()
-                        st.success(msg); st.rerun()
-                    else: st.error(msg)
-
-            with tab_edit_pw:
-                old_pw_input = st.text_input("舊密碼", type="password", key="change_old_p")
-                new_pw_input = st.text_input("新密碼", type="password", key="change_new_p")
-                confirm_new_pw = st.text_input("再次確認新密碼", type="password", key="change_confirm_p")
-                if st.button("確認修改密碼", key="btn_change_pw", use_container_width=True):
-                    if new_pw_input != confirm_new_pw: st.error("兩次輸入的新密碼不一致")
-                    else:
-                        ok, msg = update_password(u["username"], old_pw_input, new_pw_input)
-                        if ok: st.success(msg)
-                        else: st.error(msg)
-
-            st.markdown("<br>", unsafe_allow_html=True)
-            if st.button("登出系統 Logout", key="main_logout_btn", use_container_width=True):
-                st.session_state["user_info"] = None
-                st.rerun()
+st.session_state["user_info"]
 # ==================== 【頁面 2：運動防護與傷病評估】 ====================
 elif page == "運動防護與傷病評估 Injury & Defense Feedback":
     st.title("🩺 運動防護與傷病登錄評估")
