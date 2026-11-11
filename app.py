@@ -1601,7 +1601,7 @@ elif page == "殘影軌跡 Ghosting Track":
                         u = st.session_state["user_info"]
                         save_record(u["username"], u["team_code"], "攻欄至落地殘影軌跡 Ghosting Track", rec_title_ghost, {"image_b64": captured_ghost_img, "saved_at": str(datetime.datetime.now())})
                         st.success("儲存成功！")    
-# ==================== 【頁面 6：雙影同步 Dual Video Sync】 ====================
+# ==================== 【頁面：雙影同步 Dual Video Sync】 ====================
 elif page == "雙影同步 Dual Video Sync":
     st.title("🎬 雙影同步與關鍵影格角度分析 Dual Video Sync & Angle Analysis")
     st.markdown("---")
@@ -1613,10 +1613,11 @@ elif page == "雙影同步 Dual Video Sync":
         file_b = st.file_uploader("上傳影片 B (如：右側 / 新紀錄)", type=["mp4", "mov", "avi"], key="dual_v_b")
 
     if file_a and file_b:
-        b64_a = get_base64_video(file_a)
-        mime_a = get_mime_type(file_a.name)
-        b64_b = get_base64_video(file_b)
-        mime_b = get_mime_type(file_b.name)
+        with st.spinner("正在進行手機影片自動轉碼與雙影解碼 (H.264 MP4)..."):
+            bytes_a, mime_a = process_and_convert_video(file_a)
+            bytes_b, mime_b = process_and_convert_video(file_b)
+            b64_a = base64.b64encode(bytes_a).decode("utf-8")
+            b64_b = base64.b64encode(bytes_b).decode("utf-8")
 
         tab_sync_play, tab_dual_angle = st.tabs([
             "📹 雙影同步對比播放",
@@ -1630,47 +1631,52 @@ elif page == "雙影同步 Dual Video Sync":
             <html>
             <head>
                 <style>
-                    .dual-container {{ display: flex; gap: 10px; width: 100%; font-family: sans-serif; }}
-                    .vid-box {{ flex: 1; background: #000; border-radius: 8px; padding: 5px; text-align: center; color: white; }}
-                    video {{ width: 100%; height: auto; max-height: 380px; border-radius: 4px; }}
-                    .controls-bar {{ margin-top: 15px; padding: 15px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; }}
+                    * {{ box-sizing: border-box; }}
+                    body {{ font-family: -apple-system, sans-serif; background: transparent; color: #0f172a; margin: 0; padding: 0; }}
+                    .dual-container {{ display: flex; gap: 12px; width: 100%; }}
+                    .vid-box {{ flex: 1; background: #0f172a; border-radius: 8px; padding: 8px; text-align: center; color: white; }}
+                    video {{ width: 100%; height: auto; max-height: 380px; border-radius: 4px; object-fit: contain; }}
+                    .controls-bar {{ margin-top: 15px; padding: 15px; background: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0; }}
                     .slider-row {{ display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }}
-                    input[type=range] {{ flex: 1; }}
+                    input[type=range] {{ flex: 1; height: 6px; border-radius: 3px; background: #cbd5e1; cursor: pointer; }}
+                    button {{ padding: 6px 12px; border-radius: 4px; border: 1px solid #cbd5e1; background: #f8fafc; cursor: pointer; font-size: 12px; font-weight: bold; }}
+                    button.btn-primary {{ background: #2563eb; color: white; border: none; }}
+                    button.btn-danger {{ background: #dc2626; color: white; border: none; }}
                 </style>
             </head>
             <body>
                 <div class="dual-container">
                     <div class="vid-box">
-                        <p style="margin:4px; font-weight:bold;">影片 A：{file_a.name}</p>
-                        <video id="vidA" controls><source src="data:{mime_a};base64,{b64_a}"></video>
-                        <div style="margin-top:4px;">
+                        <p style="margin:4px; font-weight:bold; color:#38bdf8;">影片 A：{file_a.name}</p>
+                        <video id="vidA" controls playsinline><source src="data:{mime_a};base64,{b64_a}"></video>
+                        <div style="margin-top:6px; font-size:12px;">
                             <span>時間: <b id="txtTimeA">0.00</b>s</span> | 
                             <span>微調: </span>
-                            <button onclick="stepA(-0.033)">-1幀</button>
-                            <button onclick="stepA(0.033)">+1幀</button>
+                            <button onclick="stepA(-0.033)">-1幀 (-0.03s)</button>
+                            <button onclick="stepA(0.033)">+1幀 (+0.03s)</button>
                         </div>
                     </div>
                     <div class="vid-box">
-                        <p style="margin:4px; font-weight:bold;">影片 B：{file_b.name}</p>
-                        <video id="vidB" controls><source src="data:{mime_b};base64,{b64_b}"></video>
-                        <div style="margin-top:4px;">
+                        <p style="margin:4px; font-weight:bold; color:#f59e0b;">影片 B：{file_b.name}</p>
+                        <video id="vidB" controls playsinline><source src="data:{mime_b};base64,{b64_b}"></video>
+                        <div style="margin-top:6px; font-size:12px;">
                             <span>時間: <b id="txtTimeB">0.00</b>s</span> | 
                             <span>微調: </span>
-                            <button onclick="stepB(-0.033)">-1幀</button>
-                            <button onclick="stepB(0.033)">+1幀</button>
+                            <button onclick="stepB(-0.033)">-1幀 (-0.03s)</button>
+                            <button onclick="stepB(0.033)">+1幀 (+0.03s)</button>
                         </div>
                     </div>
                 </div>
 
                 <div class="controls-bar">
                     <div class="slider-row">
-                        <b style="width:140px;">主控制同步滑桿:</b>
+                        <b style="width:140px; color:#2563eb;">主控制同步滑桿:</b>
                         <input type="range" id="sliderMaster" min="0" max="100" value="0" step="0.01">
-                        <span id="txtMasterTime" style="font-weight:bold; width:60px;">0.00s</span>
+                        <span id="txtMasterTime" style="font-weight:bold; width:60px; color:#059669;">0.00s</span>
                     </div>
                     <div style="display:flex; gap:10px; justify-content:center; margin-top:10px;">
-                        <button onclick="playBoth()" style="padding:6px 16px; background:#2563eb; color:white; border:none; border-radius:4px; cursor:pointer;">▶ 同步播放</button>
-                        <button onclick="pauseBoth()" style="padding:6px 16px; background:#dc2626; color:white; border:none; border-radius:4px; cursor:pointer;">⏸ 同步暫停</button>
+                        <button class="btn-primary" onclick="playBoth()" style="padding:8px 20px;">▶ 同步播放</button>
+                        <button class="btn-danger" onclick="pauseBoth()" style="padding:8px 20px;">⏸ 同步暫停</button>
                     </div>
                 </div>
 
@@ -1724,22 +1730,24 @@ elif page == "雙影同步 Dual Video Sync":
 
         # ------------------ 分頁 2：雙影角度分析與截取 ------------------
         with tab_dual_angle:
-            st.info("💡 **操作指南**：在下方兩部影片中暫停於關鍵動作，點擊「擷取畫面至畫布」，即可使用滑鼠點擊 3 點進行角度量測，完成後點擊「合成並上傳至團隊紀錄」。")
+            st.info("💡 **操作指南**：在兩部影片中暫停於關鍵動作點，點擊「擷取畫面至畫布」，接著用滑鼠在畫布上連續點擊 3 點標記關節角度，完成後點擊「合成兩圖與角度數據並傳送至系統」。")
             
             dual_angle_html = f"""
             <!DOCTYPE html>
             <html>
             <head>
                 <style>
-                    .angle-container {{ display: flex; gap: 12px; width: 100%; font-family: sans-serif; }}
-                    .canvas-card {{ flex: 1; background: #1e293b; padding: 8px; border-radius: 8px; text-align: center; color: white; }}
+                    * {{ box-sizing: border-box; }}
+                    body {{ font-family: -apple-system, sans-serif; background: transparent; color: #0f172a; margin: 0; padding: 0; }}
+                    .angle-container {{ display: flex; gap: 12px; width: 100%; }}
+                    .canvas-card {{ flex: 1; background: #0f172a; padding: 10px; border-radius: 8px; text-align: center; color: white; }}
                     canvas {{ width: 100%; background: #000; border-radius: 4px; cursor: crosshair; margin-top: 6px; }}
-                    .btn-group {{ display: flex; gap: 8px; justify-content: center; margin-top: 6px; }}
-                    button {{ padding: 5px 12px; border-radius: 4px; border: none; cursor: pointer; font-weight: bold; font-size: 12px; }}
+                    .btn-group {{ display: flex; gap: 8px; justify-content: center; margin-top: 8px; }}
+                    button {{ padding: 6px 14px; border-radius: 4px; border: none; cursor: pointer; font-weight: bold; font-size: 12px; }}
                     .btn-cap {{ background: #3b82f6; color: white; }}
                     .btn-clr {{ background: #ef4444; color: white; }}
-                    .btn-upload {{ background: #10b981; color: white; font-size: 14px; padding: 8px 24px; margin-top: 12px; }}
-                    .angle-info {{ background: #334155; padding: 4px; border-radius: 4px; font-size: 12px; margin-top: 4px; color: #38bdf8; }}
+                    .btn-upload {{ background: #059669; color: white; font-size: 14px; padding: 10px 24px; margin-top: 14px; border-radius: 6px; }}
+                    .angle-info {{ background: #1e293b; padding: 6px; border-radius: 4px; font-size: 12px; margin-top: 6px; color: #38bdf8; font-weight: bold; }}
                 </style>
             </head>
             <body>
@@ -1750,21 +1758,21 @@ elif page == "雙影同步 Dual Video Sync":
 
                 <div class="angle-container">
                     <div class="canvas-card">
-                        <div style="font-weight:bold; font-size:13px;">影片 A 關鍵畫面</div>
+                        <div style="font-weight:bold; font-size:13px; color:#38bdf8;">影片 A 關鍵畫面 ({file_a.name})</div>
                         <canvas id="canA" width="480" height="320"></canvas>
-                        <div class="angle-info" id="infoA">角度：尚未量測 (滑鼠點擊 3 點)</div>
+                        <div class="angle-info" id="infoA">角度：尚未量測 (請先擷取畫面並點擊 3 點)</div>
                         <div class="btn-group">
-                            <button class="btn-cap" onclick="capFrame('A')">📷 擷取影片 A 畫面</button>
-                            <button class="btn-clr" onclick="clearPts('A')">↺ 重置 A 角度</button>
+                            <button class="btn-cap" onclick="capFrame('A')">📷 擷取影片 A 當前畫面</button>
+                            <button class="btn-clr" onclick="clearPts('A')">↺ 重置 A 角度標記</button>
                         </div>
                     </div>
                     <div class="canvas-card">
-                        <div style="font-weight:bold; font-size:13px;">影片 B 關鍵畫面</div>
+                        <div style="font-weight:bold; font-size:13px; color:#f59e0b;">影片 B 關鍵畫面 ({file_b.name})</div>
                         <canvas id="canB" width="480" height="320"></canvas>
-                        <div class="angle-info" id="infoB">角度：尚未量測 (滑鼠點擊 3 點)</div>
+                        <div class="angle-info" id="infoB">角度：尚未量測 (請先擷取畫面並點擊 3 點)</div>
                         <div class="btn-group">
-                            <button class="btn-cap" onclick="capFrame('B')">📷 擷取影片 B 畫面</button>
-                            <button class="btn-clr" onclick="clearPts('B')">↺ 重置 B 角度</button>
+                            <button class="btn-cap" onclick="capFrame('B')">📷 擷取影片 B 當前畫面</button>
+                            <button class="btn-clr" onclick="clearPts('B')">↺ 重置 B 角度標記</button>
                         </div>
                     </div>
                 </div>
@@ -1787,8 +1795,8 @@ elif page == "雙影同步 Dual Video Sync":
                         const c = (tag === 'A') ? canA : canB;
                         const ctx = (tag === 'A') ? ctxA : ctxB;
                         ctx.drawImage(v, 0, 0, c.width, c.height);
-                        if (tag === 'A') {{ imgDataA = ctx.getImageData(0,0,c.width,c.height); ptsA = []; angleA = null; document.getElementById('infoA').innerText = '角度：已擷取畫面，請點擊 3 點標記'; }}
-                        else {{ imgDataB = ctx.getImageData(0,0,c.width,c.height); ptsB = []; angleB = null; document.getElementById('infoB').innerText = '角度：已擷取畫面，請點擊 3 點標記'; }}
+                        if (tag === 'A') {{ imgDataA = ctx.getImageData(0,0,c.width,c.height); ptsA = []; angleA = null; document.getElementById('infoA').innerText = '已擷取畫面，請在畫布上連續點擊 3 點'; }}
+                        else {{ imgDataB = ctx.getImageData(0,0,c.width,c.height); ptsB = []; angleB = null; document.getElementById('infoB').innerText = '已擷取畫面，請在畫布上連續點擊 3 點'; }}
                     }}
 
                     function clearPts(tag) {{
@@ -1867,10 +1875,36 @@ elif page == "雙影同步 Dual Video Sync":
                             timestamp: new Date().toISOString()
                         }});
 
-                        const imgBox = window.parent.document.querySelector('textarea[aria-label="dual_img_b64"]');
-                        const jsonBox = window.parent.document.querySelector('textarea[aria-label="dual_data_json"]');
-                        if (imgBox) {{ imgBox.value = mergedB64; imgBox.dispatchEvent(new Event('input', {{ bubbles: true }})); }}
-                        if (jsonBox) {{ jsonBox.value = jsonPayload; jsonBox.dispatchEvent(new Event('input', {{ bubbles: true }})); }}
+                        const textAreas = window.parent.document.querySelectorAll('textarea');
+                        let targetImgBox = null, targetJsonBox = null;
+                        textAreas.forEach(ta => {{
+                            const label = ta.getAttribute('aria-label') || '';
+                            if (label.includes('dual_img_b64')) targetImgBox = ta;
+                            if (label.includes('dual_data_json')) targetJsonBox = ta;
+                        }});
+
+                        function syncVal(el, val) {{
+                            if (!el) return;
+                            const pWin = window.parent;
+                            try {{
+                                const nativeSetter = pWin.Object.getOwnPropertyDescriptor(pWin.HTMLTextAreaElement.prototype, "value").set;
+                                nativeSetter.call(el, val);
+                                if (el._valueTracker) el._valueTracker.setValue('');
+                                el.focus();
+                                el.dispatchEvent(new pWin.Event('input', {{ bubbles: true }}));
+                                el.dispatchEvent(new pWin.Event('change', {{ bubbles: true }}));
+                                el.blur();
+                            }} catch(err) {{
+                                el.value = val;
+                                el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                            }}
+                        }}
+
+                        if (targetImgBox && targetJsonBox) {{
+                            syncVal(targetImgBox, mergedB64);
+                            syncVal(targetJsonBox, jsonPayload);
+                            alert("雙影角度合成畫面已傳送至系統！");
+                        }}
                     }}
                 </script>
             </body>
@@ -1891,11 +1925,16 @@ elif page == "雙影同步 Dual Video Sync":
                     rec_title_dual = st.text_input("紀錄名稱", value=f"雙影角度對比 {file_a.name} vs {file_b.name}")
                     if st.form_submit_button("💾 儲存至團隊數據庫", use_container_width=True):
                         u = st.session_state["user_info"]
-                        save_record(u["username"], u["team_code"], "雙影同步 Dual Video Sync", rec_title_dual, {
-                            "image_b64": captured_dual_img, 
-                            "angle_metrics": json.loads(captured_dual_json), 
-                            "saved_at": str(datetime.datetime.now())
-                        })
+                        save_record(
+                            username=u["username"],
+                            module="雙影同步 Dual Video Sync",
+                            title=rec_title_dual,
+                            details_dict={
+                                "image_b64": captured_dual_img, 
+                                "angle_metrics": json.loads(captured_dual_json), 
+                                "saved_at": str(datetime.datetime.now())
+                            }
+                        )
                         st.success("成功儲存至團隊歷史數據庫！")
                         st.rerun()
 
