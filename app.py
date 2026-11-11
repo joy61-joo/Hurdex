@@ -2086,7 +2086,13 @@ elif page == "課表紀錄 Training Plan":
 
             # 自動載入上一次紀錄的傷病部位與腳位
             if "dyn_injuries_user" not in st.session_state or st.session_state["dyn_injuries_user"] != target_athlete:
-                prev_plans = get_training_plans(username=target_athlete)
+                try:
+    prev_plans = get_training_plans(target_athlete)
+except Exception:
+    try:
+        prev_plans = get_training_plans(username=target_athlete)
+    except Exception:
+        prev_plans = []
                 carried_injuries = []
                 if prev_plans:
                     last_plan = prev_plans[-1]
