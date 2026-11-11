@@ -2737,7 +2737,7 @@ elif page == "課表紀錄 Training Plan":
                                 st.rerun()
 
 # ==================== 【頁面 7：歷史分析紀錄】 ====================
-elif page == "歷史分析紀錄庫 History Records":
+elif page == "歷史分析紀錄 History Records":
     st.title("歷史分析紀錄庫 History Records Repository")
     st.markdown("---")
 
@@ -2860,7 +2860,7 @@ elif page == "歷史分析紀錄庫 History Records":
                                 if st.button(f"🗑️ 刪除整筆紀錄 ID {rec_id}", key=f"del_btn_{rec_id}"):
                                     delete_record(rec_id)
                                     st.rerun()
-                                    
+                                        
                         st.markdown("---")
 
 # ==================== 【頁面 10：未來擴充規劃】 ====================
