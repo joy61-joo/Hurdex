@@ -2736,55 +2736,132 @@ elif page == "課表紀錄 Training Plan":
                                 delete_training_plan(p_id)
                                 st.rerun()
 
-# ==================== 【頁面 9：歷史分析紀錄】 ====================
-elif page == "歷史分析紀錄 History Records":
+# ==================== 【頁面 7：歷史分析紀錄】 ====================
+elif page == "歷史分析紀錄庫 History Records":
     st.title("歷史分析紀錄庫 History Records Repository")
     st.markdown("---")
 
     if st.session_state["user_info"] is None:
-        st.warning("請先登入帳號")
+        st.warning("請先在左側邊欄登入帳號 Please Login in Sidebar First")
     else:
-        u = st.session_state["user_info"]
-        team_code = u["team_code"]
-        role = u["role"]
+        user = st.session_state["user_info"]
+        is_coach = (user["role"] == "coach")
 
-        records = get_user_records(team_code, username=None if role in ["coach", "trainer"] else u["username"])
+        records = get_user_records(username=None if is_coach else user["username"])
 
         if not records:
-            st.warning("尚無歷史分析紀錄")
+            st.warning("尚無任何分析紀錄 No History Records Found")
         else:
+            grouped_records = {}
             for rec in records:
-                rec_id, rec_user, rec_module, rec_title, rec_details_str, rec_time = rec
-                rec_details = json.loads(rec_details_str)
-                with st.expander(f"[{rec_module}] {rec_title} (選手: {rec_user} ｜ 時間: {rec_time})"):
-                    col_d1, col_d2 = st.columns([1.2, 0.8])
-                    with col_d1:
-                        if "image_b64" in rec_details:
-                            st.image(rec_details["image_b64"], caption="畫面截圖", use_container_width=True)
-                    with col_d2:
-                        st.markdown("##### 數據明細：")
-                        if "angle_metrics" in rec_details:
-                            am = rec_details["angle_metrics"]
-                            if isinstance(am, dict):
-                                st.write(f"時間：`{am.get('rel_time_sec', '0.00')} 秒` ｜ 階段：`{am.get('phase_tag', '未標註')}`")
-                                for item in am.get("angles", []): st.write(f"• {item['name']}：`{item['value']}`")
-                        if "timer_metrics" in rec_details:
-                            tm = rec_details["timer_metrics"]
-                            st.write(f"**總耗時**：`{tm.get('total_time')} 秒`")
+                date_str = rec[5].split(" ")[0] if " " in rec[5] else rec[5]
+                if date_str not in grouped_records: grouped_records[date_str] = []
+                grouped_records[date_str].append(rec)
 
-                    st.markdown("##### 📝 動作分析筆記與評語 Notes")
-                    current_notes = rec_details.get("notes", "")
-                    note_input = st.text_area("輸入評語與指導建議", value=current_notes, height=100, key=f"note_input_{rec_id}")
-                    col_b1, col_b2 = st.columns([0.3, 0.7])
-                    with col_b1:
-                        if st.button("💾 儲存筆記", key=f"save_note_btn_{rec_id}", use_container_width=True):
-                            rec_details["notes"] = note_input
-                            update_record_details(rec_id, rec_details)
-                            st.success("筆記已更新！"); st.rerun()
-                    with col_b2:
-                        if role in ["coach", "trainer"] or rec_user == u["username"]:
-                            if st.button(f"🗑️ 刪除紀錄 ID {rec_id}", key=f"del_btn_{rec_id}"):
-                                delete_record(rec_id); st.rerun()
+            for date_key in sorted(grouped_records.keys(), reverse=True):
+                day_recs = grouped_records[date_key]
+                with st.expander(f"日期 Date：{date_key} （共 {len(day_recs)} 筆紀錄）"):
+                    for rec in day_recs:
+                        rec_id, rec_user, rec_module, rec_title, rec_details_str, rec_time = rec
+                        try:
+                            rec_details = json.loads(rec_details_str) if isinstance(rec_details_str, str) else rec_details_str
+                        except Exception:
+                            rec_details = {}
+
+                        st.markdown(f"#### [{rec_module}] {rec_title}")
+                        st.write(f"建立者 Creator：`{rec_user}` ｜ 上傳時間 Upload Time：`{rec_time}`")
+
+                        col_d1, col_d2 = st.columns([1.2, 0.8])
+                        with col_d1:
+                            if isinstance(rec_details, dict) and "image_b64" in rec_details:
+                                st.image(rec_details["image_b64"], caption="畫面截圖 Composite Image", use_container_width=True)
+                            elif isinstance(rec_details, dict):
+                                st.write("原始影片檔名: " + str(rec_details.get("video_filename", "未指定")))
+
+                        with col_d2:
+                            st.markdown("##### 數據明細 Data Details：")
+                            
+                            if isinstance(rec_details, dict):
+                                # 1. 關鍵影格角度量測解析
+                                if "angle_metrics" in rec_details:
+                                    am = rec_details["angle_metrics"]
+                                    if isinstance(am, str):
+                                        try: am = json.loads(am)
+                                        except Exception: am = {}
+                                    if isinstance(am, dict):
+                                        rel_t = am.get("rel_time_sec", am.get("time_sec", "0.00"))
+                                        st.write(f"時間 Time：`{rel_t} 秒` ｜ 階段 Phase：`{am.get('phase_tag', '未標註')}`")
+                                        for item in am.get("angles", []):
+                                            if isinstance(item, dict):
+                                                st.write(f"• {item.get('name', '角度')}：`{item.get('value', '0°')}`")
+
+                                # 2. 欄間秒數及速度全相容解析邏輯
+                                tm = rec_details.get("timer_metrics", rec_details.get("timer_data", None))
+                                if tm is None and ("splits" in rec_details or "total_time" in rec_details):
+                                    tm = rec_details
+
+                                if tm:
+                                    if isinstance(tm, str):
+                                        try: tm = json.loads(tm)
+                                        except Exception: tm = {}
+
+                                    if isinstance(tm, dict):
+                                        total_t = tm.get("total_time", tm.get("total_sec", tm.get("total", "-")))
+                                        t0_v = tm.get("t0_sec", tm.get("t0", "0.00"))
+                                        st.write(f"**總時間 Total**：`{total_t} 秒` ｜ **T0 起點**：`{t0_v}s`")
+
+                                        splits = tm.get("splits", rec_details.get("splits", []))
+                                        if isinstance(splits, str):
+                                            try: splits = json.loads(splits)
+                                            except Exception: splits = []
+
+                                        if isinstance(splits, list) and len(splits) > 0:
+                                            table_rows = []
+                                            for s in splits:
+                                                if isinstance(s, dict):
+                                                    seg_name = s.get("segment", s.get("phase", s.get("name", s.get("label", "-"))))
+                                                    cum_t = s.get("cum_sec", s.get("cum_time", s.get("cumulative", "-")))
+                                                    split_t = s.get("split_sec", s.get("split_time", s.get("dt", "-")))
+                                                    spd_val = s.get("speed_ms", s.get("speed", s.get("spd", "-")))
+
+                                                    table_rows.append({
+                                                        "階段 Phase": seg_name,
+                                                        "累積時間 Cumulative (s)": f"{cum_t}s" if str(cum_t).replace('.','',1).isdigit() else str(cum_t),
+                                                        "單段 Split (s)": f"{split_t}s" if str(split_t).replace('.','',1).isdigit() else str(split_t),
+                                                        "平均速度 Speed (m/s)": f"{spd_val} m/s" if str(spd_val).replace('.','',1).isdigit() else str(spd_val)
+                                                    })
+                                            if table_rows:
+                                                st.dataframe(pd.DataFrame(table_rows), use_container_width=True, hide_index=True)
+                                        else:
+                                            st.caption("⚠️ 尚無分段數據明細 No split details found")
+
+                        # -------------------- 【分析筆記與註記區塊】 --------------------
+                        st.markdown("##### 📝 動作分析筆記與教練叮嚀 Analysis Notes")
+                        current_notes = rec_details.get("notes", "") if isinstance(rec_details, dict) else ""
+                        
+                        note_input = st.text_area(
+                            "輸入或修改本筆紀錄的檢討與建議 Notes & Comments",
+                            value=current_notes,
+                            height=100,
+                            key=f"note_input_{rec_id}"
+                        )
+                        
+                        col_btn1, col_btn2 = st.columns([0.3, 0.7])
+                        with col_btn1:
+                            if st.button("💾 儲存筆記 Save Note", key=f"save_note_btn_{rec_id}", use_container_width=True):
+                                if isinstance(rec_details, dict):
+                                    rec_details["notes"] = note_input
+                                    update_record_details(rec_id, rec_details)
+                                    st.success("筆記已成功更新至資料庫！Note Updated!")
+                                    st.rerun()
+
+                        if is_coach or rec_user == user["username"]:
+                            with col_btn2:
+                                if st.button(f"🗑️ 刪除整筆紀錄 ID {rec_id}", key=f"del_btn_{rec_id}"):
+                                    delete_record(rec_id)
+                                    st.rerun()
+                                    
+                        st.markdown("---")
 
 # ==================== 【頁面 10：未來擴充規劃】 ====================
 elif page == "未來擴充規劃 Future Roadmap":
