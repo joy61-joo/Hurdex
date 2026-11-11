@@ -372,14 +372,39 @@ def update_competition(comp_id, name, start_date, end_date, notes):
     cur.close()
     conn.close()
     
-def save_record(username, team_code, module, title, details_dict):
+def save_record(*args, **kwargs):
+    """
+    全相容性紀錄儲存函數
+    能自動相容 4 個或 5 個參數 (含/不含 team_code)，支援位置與關鍵字引數
+    """
     conn = get_db_connection()
     c = conn.cursor()
     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    c.execute("INSERT INTO records (username, team_code, module, title, details, timestamp) VALUES (%s, %s, %s, %s, %s, %s)",
-              (username, team_code, module, title, json.dumps(details_dict, ensure_ascii=False), now_str))
+
+    if len(args) == 5:
+        # username, team_code, module, title, details_dict
+        username, _, module, title, details_dict = args
+    elif len(args) == 4:
+        # username, module, title, details_dict
+        username, module, title, details_dict = args
+    else:
+        username = kwargs.get("username", args[0] if len(args) > 0 else "")
+        module = kwargs.get("module", kwargs.get("category", args[1] if len(args) > 1 else ""))
+        title = kwargs.get("title", args[2] if len(args) > 2 else "")
+        details_dict = kwargs.get("details_dict", kwargs.get("details", kwargs.get("content", args[3] if len(args) > 3 else {})))
+
+    if isinstance(details_dict, (dict, list)):
+        details_json = json.dumps(details_dict, ensure_ascii=False)
+    else:
+        details_json = str(details_dict)
+
+    c.execute(
+        "INSERT INTO records (username, module, title, details, timestamp) VALUES (%s, %s, %s, %s, %s)",
+        (username, module, title, details_json, now_str)
+    )
     conn.commit()
-    c.close(); conn.close()
+    c.close()
+    conn.close()
 
 def get_user_records(team_code, username=None, module=None):
     conn = get_db_connection()
@@ -2021,7 +2046,7 @@ elif page == "雙影同步 Dual Video Sync":
         captured_dual_img = st.text_area("dual_img_b64", key="captured_dual_img", label_visibility="collapsed")
         captured_dual_json = st.text_area("dual_data_json", key="captured_dual_json", label_visibility="collapsed")
 
-        if captured_dual_img and captured_dual_json:
+       if captured_dual_img and captured_dual_json:
             st.success("📸 已成功擷取並合成雙影角度分析畫面！")
             st.image(captured_dual_img, caption="雙影對比與角度量測合成圖", use_container_width=True)
 
@@ -2030,13 +2055,20 @@ elif page == "雙影同步 Dual Video Sync":
                     rec_title_dual = st.text_input("紀錄名稱", value=f"雙影角度對比 {file_a.name} vs {file_b.name}")
                     if st.form_submit_button("💾 儲存至團隊數據庫", use_container_width=True):
                         u = st.session_state["user_info"]
+                        
+                        # 解析角度數據並透過相容語法儲存
+                        try:
+                            parsed_metrics = json.loads(captured_dual_json)
+                        except Exception:
+                            parsed_metrics = {"raw_json": captured_dual_json}
+
                         save_record(
-                            username=u["username"],
-                            module="雙影同步 Dual Video Sync",
-                            title=rec_title_dual,
-                            details_dict={
+                            u["username"],
+                            "雙影同步 Dual Video Sync",
+                            rec_title_dual,
+                            {
                                 "image_b64": captured_dual_img, 
-                                "angle_metrics": json.loads(captured_dual_json), 
+                                "angle_metrics": parsed_metrics, 
                                 "saved_at": str(datetime.datetime.now())
                             }
                         )
