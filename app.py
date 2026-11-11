@@ -2365,12 +2365,12 @@ elif page == "課表紀錄 Training Plan":
 
             if st.button("新增身體部位痛點 Add Muscle Region", key="add_more_inj_btn"):
                 st.session_state["dyn_injuries"].append({"area": "右膝/髕腱 Right Patellar Tendon", "level": 0, "pain_types": [], "notes": ""})
-                st.rerun()
-
-            st.markdown("---")
+                st.rerun()st.markdown("---")
             st.markdown("##### 3. 課表內容與自主備註 Plan Details & Notes")
             content = st.text_area("課表細節與組數規劃 Plan Details & Sets", height=120, key="log_content")
-            user_notes = st.text_area("動作感覺與教練叮嚀 Notesif st.button("儲存訓練日誌 Save Training Log", key="btn_save_training_log", use_container_width=True):
+            user_notes = st.text_area("動作感覺與教練叮嚀 Notes & Feedback", height=80, key="log_user_notes")
+
+            if st.button("儲存訓練日誌 Save Training Log", key="btn_save_training_log", use_container_width=True):
                 if content.strip():
                     extra_log_info = {
                         "duration_min": duration_min, 
