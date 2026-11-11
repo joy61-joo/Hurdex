@@ -2326,8 +2326,7 @@ elif page == "課表紀錄 Training Plan":
 
             st.markdown("<br>", unsafe_allow_html=True)
             st.markdown("###### 傷害追蹤")
-
-            injuries_input_data = []
+injuries_input_data = []
             to_delete_idx = None
             for idx, item in enumerate(st.session_state["dyn_injuries"]):
                 c_sel1, c_sel2, c_sel3, c_sel4 = st.columns([1.5, 1.2, 1.6, 1.2])
@@ -2357,7 +2356,9 @@ elif page == "課表紀錄 Training Plan":
                     "level": selected_lvl,
                     "pain_types": selected_pain_types,
                     "notes": selected_note
-                })if to_delete_idx is not None:
+                })
+
+            if to_delete_idx is not None:
                 st.session_state["dyn_injuries"].pop(to_delete_idx)
                 st.rerun()
 
