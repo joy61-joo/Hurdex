@@ -2053,130 +2053,197 @@ elif page == "跨期數據對比 Longitudinal Comparison":
                                 if isinstance(angles, list):
                                     for a in angles:
                                         st.write(f"• {a.get('name')}：`{a.get('value')}`")
-
-# ==================== 【頁面 8：課表紀錄】 ====================
+# ==================== 【頁面 6：課表紀錄】 ====================
 elif page == "課表紀錄 Training Plan":
     st.title("課表與訓練日誌紀錄 Training Plan & Daily Log")
     st.markdown("---")
 
     if st.session_state["user_info"] is None:
-        st.warning("請先登入帳號")
+        st.warning("請先在左側邊欄登入帳號 Please Login in Sidebar First")
     else:
-        u = st.session_state["user_info"]
-        team_code = u["team_code"]
-        role = u["role"]
+        user = st.session_state["user_info"]
+        is_coach = (user["role"] == "coach")
 
         tab_new_plan, tab_view_plan = st.tabs([
-            "新增與編輯訓練日誌 Add & Edit Log",
-            "歷次課表與日誌總覽 Log History"
+            "新增與編輯訓練日誌 Add & Edit Training Log",
+            "歷次課表與日誌總覽 Training Log History"
         ])
 
         with tab_new_plan:
-            st.subheader("填寫訓練日誌細節 Fill Log Details")
-            if role in ["coach", "trainer"]:
-                team_athletes = get_team_athletes(team_code)
-                target_athlete = st.selectbox("指定選手 Select Athlete", team_athletes) if team_athletes else u["username"]
+            st.subheader("填寫訓練日誌內容 Fill Training Log Details")
+            
+            if is_coach:
+                conn = get_db_connection()
+                c = conn.cursor()
+                c.execute("SELECT DISTINCT username FROM users WHERE role='player'")
+                player_list = [r[0] for r in c.fetchall()]
+                c.close()
+                conn.close()
+                if not player_list: player_list = [user["username"]]
+                target_athlete = st.selectbox("指定選手 Select Athlete", player_list, key="plan_sel_athlete")
             else:
-                target_athlete = u["username"]
+                target_athlete = user["username"]
 
+            # 自動載入上一次紀錄的傷病部位與腳位
             if "dyn_injuries_user" not in st.session_state or st.session_state["dyn_injuries_user"] != target_athlete:
-                prev_plans = get_training_plans(team_code, username=target_athlete)
+                prev_plans = get_training_plans(username=target_athlete)
                 carried_injuries = []
                 if prev_plans:
+                    last_plan = prev_plans[-1]
                     try:
-                        last_inj_list = json.loads(prev_plans[-1][6]).get("injuries_list", [])
+                        parsed_last = json.loads(last_plan[6])
+                        last_inj_list = parsed_last.get("injuries_list", [])
                         for inj in last_inj_list:
-                            if inj.get("area"): carried_injuries.append({"area": inj.get("area"), "level": inj.get("level", 0), "notes": ""})
-                    except Exception: pass
-                if not carried_injuries: carried_injuries = [{"area": "右大腿股四頭肌 Right Quadriceps", "level": 0, "notes": ""}]
+                            if inj.get("area"):
+                                carried_injuries.append({
+                                    "area": inj.get("area"),
+                                    "leg_side": inj.get("leg_side", "不分腳位"),
+                                    "level": inj.get("level", 0),
+                                    "pain_types": inj.get("pain_types", []),
+                                    "notes": inj.get("notes", "")
+                                })
+                    except Exception:
+                        pass
+
+                if not carried_injuries:
+                    carried_injuries = [{"area": "右大腿股四頭肌 Right Quadriceps", "leg_side": "不分腳位", "level": 0, "pain_types": [], "notes": ""}]
+
                 st.session_state["dyn_injuries"] = carried_injuries
                 st.session_state["dyn_injuries_user"] = target_athlete
 
+            # 選單選項定義
             BODY_PART_OPTIONS = [
-                "頭頸部 Head & Neck", "右肩/三角肌 Right Shoulder", "左肩/三角肌 Left Shoulder",
-                "胸大肌 Pectoralis Major", "腹直肌/核心 Rectus Abdominis", "下背/腰椎肌群 Lower Back",
+                "頭頸部 Head & Neck", "右肩/三角肌 Right Shoulder Deltoid", "左肩/三角肌 Left Shoulder Deltoid",
+                "胸大肌 Pectoralis Major", "腹直肌/核心 Rectus Abdominis", "下背/腰椎肌群 Lower Back Lumbar",
                 "臀大肌 Gluteus Maximus", "右大腿股四頭肌 Right Quadriceps", "左大腿股四頭肌 Left Quadriceps",
-                "右大腿後側膕繩肌 Right Hamstrings", "左大腿後側膕繩肌 Left Hamstrings", "右膝/髕腱 Right Knee",
-                "左膝/髕腱 Left Knee", "右小腿/跟腱 Right Calf", "左小腿/跟腱 Left Calf",
-                "右腳踝/足底 Right Ankle", "左腳踝/足底 Left Ankle"
+                "右大腿後側膕繩肌 Right Hamstrings", "左大腿後側膕繩肌 Left Hamstrings", "右膝/髕腱 Right Patellar Tendon",
+                "左膝/髕腱 Left Patellar Tendon", "右小腿/跟腱 Right Calf & Achilles", "左小腿/跟腱 Left Calf & Achilles",
+                "右腳踝/足底 Right Ankle & Plantar", "左腳踝/足底 Left Ankle & Plantar"
+            ]
+
+            LEG_SIDE_OPTIONS = [
+                "起跨腳 (Lead Leg)", "擺動腳 (Trail Leg)", "雙側皆有", "不分腳位"
+            ]
+
+            PAIN_NATURE_OPTIONS = [
+                "延遲性酸痛 (DOMS)", "肌肉緊繃/僵硬", "拉扯痛/牽扯感", "撕裂痛",
+                "銳痛/刺痛", "鈍痛/深層隱痛", "關節卡痛/摩擦感", "按壓痛",
+                "腫脹壓迫痛", "灼熱感/發炎痛", "脈動痛/跳痛",
+                "麻木感/麻痛", "放射痛/電擊感"
             ]
 
             captured_body_map_img = st.text_area("body_map_img_b64", key="captured_body_map_img", label_visibility="collapsed")
 
-            st.markdown("##### 1. 基本訓練與生理設定 Basic Info")
+            st.markdown("##### 1. 基本訓練設定 Basic Plan Info")
             c_p1, c_p2, c_p3 = st.columns(3)
             with c_p1:
-                plan_date = st.date_input("訓練日期", value=datetime.date.today())
-                st.text_input("選手帳號", value=target_athlete, disabled=True)
+                plan_date = st.date_input("訓練日期 Training Date", value=datetime.date.today(), key="log_plan_date")
+                st.text_input("選手名稱 Athlete Name", value=target_athlete, disabled=True, key="log_athlete_name")
             with c_p2:
-                category = st.selectbox("訓練類別", ["欄架技術 Hurdle Technique", "爆發力/重量 Explosive/Strength", "速耐力 Speed Endurance", "恢復/伸展 Recovery"])
-                duration_min = st.number_input("訓練總時長 (分鐘)", min_value=10, max_value=300, value=90, step=5)
+                category = st.selectbox("訓練主題與類別", ["欄架技術 Hurdle Technique", "爆發力/重量 Explosive/Strength", "速耐力/心肺 Speed Endurance", "恢復/伸展 Recovery"], key="log_category")
+                duration_min = st.number_input("訓練總時長 (分鐘 min)", min_value=10, max_value=300, value=90, step=5, key="log_duration")
             with c_p3:
-                rpe_feeling = st.select_slider("RPE 感覺", options=["1-2 非常輕鬆", "3-4 輕鬆", "5-6 中等", "7-8 艱難", "9-10 極限"], value="5-6 中等")
-                weather_env = st.text_input("氣候與場地", value="晴天 室外跑道 Sunny Outdoor")
+                rpe_feeling = st.select_slider("本體感覺 RPE", options=["1-2 非常輕鬆", "3-4 輕鬆", "5-6 中等", "7-8 艱難", "9-10 極限"], value="5-6 中等", key="log_rpe")
+                weather_env = st.text_input("氣候與場地環境 Weather", value="晴天 室外跑道 Sunny Outdoor", key="log_weather")
 
             st.markdown("---")
-            st.markdown("##### 2. 體能恢復與傷病標記 Physiology & Injuries")
+            st.markdown("##### 2. 體能與恢復狀態 Recovery Status & Physiology")
             c_r1, c_r2, c_r3 = st.columns([1, 1.2, 1])
-            with c_r1: fatigue_score = st.slider("身體疲勞指數 (1-10)", 1, 10, 3)
+            with c_r1:
+                fatigue_score = st.slider("身體疲勞指數 Fatigue (1-10)", 1, 10, 3, key="log_fatigue")
             with c_r2:
-                st.write("**昨夜睡眠總時長**")
+                st.write("**昨夜睡眠總時長 Sleep Duration**")
                 cs_h, cs_m = st.columns(2)
-                with cs_h: sleep_hours = st.number_input("小時", 0, 24, 7)
-                with cs_m: sleep_mins = st.number_input("分鐘", 0, 59, 30)
+                with cs_h: sleep_hours = st.number_input("小時 hr", min_value=0, max_value=24, value=7, step=1, key="log_sleep_h")
+                with cs_m: sleep_mins = st.number_input("分鐘 min", min_value=0, max_value=59, value=30, step=5, key="log_sleep_m")
                 total_sleep_hr = sleep_hours + (sleep_mins / 60.0)
-            with c_r3: resting_hr = st.number_input("靜息心率 (bpm)", 40, 220, 65)
+            with c_r3:
+                resting_hr = st.number_input("靜息心率 Heart Rate (bpm)", min_value=40, max_value=220, value=65, key="log_hr")
 
             st.markdown("<br>", unsafe_allow_html=True)
-            st.markdown("###### 部位疼痛評估與動態標記")
+            st.markdown("###### 部位疼痛評估、受力腳位與 13 項標準化疼痛性質追蹤 (前次傷病已自動載入)")
+
             injuries_input_data = []
             to_delete_idx = None
             for idx, item in enumerate(st.session_state["dyn_injuries"]):
-                c_sel1, c_sel2, c_sel3, c_sel4 = st.columns([1.5, 1.2, 1.5, 0.4])
+                c_sel1, c_sel2, c_sel3, c_sel4 = st.columns([1.5, 1.2, 1.6, 1.2])
                 with c_sel1:
-                    def_i = BODY_PART_OPTIONS.index(item["area"]) if item["area"] in BODY_PART_OPTIONS else 0
-                    selected_area = st.selectbox(f"部位 #{idx+1}", BODY_PART_OPTIONS, index=def_i, key=f"sel_area_{idx}")
-                with c_sel2: selected_lvl = st.slider("疼痛等級 (0-10)", 0, 10, item["level"], key=f"sel_lvl_{idx}")
-                with c_sel3: selected_note = st.text_input("備註說明", value=item.get("notes", ""), key=f"sel_note_{idx}")
-                with c_sel4:
+                    default_area_idx = BODY_PART_OPTIONS.index(item["area"]) if item["area"] in BODY_PART_OPTIONS else 0
+                    selected_area = st.selectbox(f"痛點部位 #{idx+1}", BODY_PART_OPTIONS, index=default_area_idx, key=f"sel_area_{idx}")
+                    
+                    default_leg_idx = LEG_SIDE_OPTIONS.index(item.get("leg_side", "不分腳位")) if item.get("leg_side") in LEG_SIDE_OPTIONS else 3
+                    selected_leg = st.selectbox(f"受力腳位 #{idx+1}", LEG_SIDE_OPTIONS, index=default_leg_idx, key=f"sel_leg_{idx}")
+                with c_sel2:
+                    selected_lvl = st.slider(f"疼痛等級 (VAS 0-10)", 0, 10, item["level"], key=f"sel_lvl_{idx}")
                     st.markdown("<br>", unsafe_allow_html=True)
-                    if st.button("刪除", key=f"del_inj_{idx}"): to_delete_idx = idx
-                injuries_input_data.append({"id": idx + 1, "area": selected_area, "level": selected_lvl, "notes": selected_note})
+                    if st.button("刪除此痛點", key=f"del_inj_{idx}"):
+                        to_delete_idx = idx
+                with c_sel3:
+                    default_pts = item.get("pain_types", [])
+                    if not isinstance(default_pts, list): default_pts = []
+                    selected_pain_types = st.multiselect(
+                        f"疼痛性質 (可多選)", 
+                        options=PAIN_NATURE_OPTIONS, 
+                        default=[p for p in default_pts if p in PAIN_NATURE_OPTIONS],
+                        key=f"sel_ptypes_{idx}"
+                    )
+                with c_sel4:
+                    selected_note = st.text_input(f"備註說明", value=item.get("notes", ""), key=f"sel_note_{idx}")
+
+                injuries_input_data.append({
+                    "id": idx + 1,
+                    "area": selected_area,
+                    "leg_side": selected_leg,
+                    "level": selected_lvl,
+                    "pain_types": selected_pain_types,
+                    "notes": selected_note
+                })
 
             if to_delete_idx is not None:
-                st.session_state["dyn_injuries"].pop(to_delete_idx); st.rerun()
+                st.session_state["dyn_injuries"].pop(to_delete_idx)
+                st.rerun()
 
-            if st.button("新增痛點部位 Add Muscle Region", key="add_more_inj_btn"):
-                st.session_state["dyn_injuries"].append({"area": "右膝/髕腱 Right Knee", "level": 0, "notes": ""})
+            if st.button("新增身體部位痛點 Add Muscle Region", key="add_more_inj_btn"):
+                st.session_state["dyn_injuries"].append({"area": "右膝/髕腱 Right Patellar Tendon", "leg_side": "不分腳位", "level": 0, "pain_types": [], "notes": ""})
                 st.rerun()
 
             st.markdown("---")
-            st.markdown("##### 3. 課表內容與自主備註 Plan & Feedback")
-            content = st.text_area("課表細節與組數規劃 Plan Details", height=120)
-            user_notes = st.text_area("動作體感與教練/防護員叮嚀 Feedback", height=80)
+            st.markdown("##### 3. 課表內容與自主備註 Plan Details & Notes")
+            content = st.text_area("課表細節與組數規劃 Plan Details & Sets", height=120, key="log_content")
+            user_notes = st.text_area("動作感覺與教練叮嚀 Notes & Feedback", height=80, key="log_user_notes")
 
-            if st.button("儲存訓練日誌 Save Training Log", use_container_width=True):
+            if st.button("儲存訓練日誌 Save Training Log", key="btn_save_training_log", use_container_width=True):
                 if content.strip():
                     extra_log_info = {
                         "duration_min": duration_min, "rpe_feeling": rpe_feeling, "weather_env": weather_env,
                         "fatigue_score": fatigue_score, "sleep_hours": sleep_hours, "sleep_mins": sleep_mins,
                         "total_sleep_hr": round(total_sleep_hr, 2), "resting_hr": resting_hr,
-                        "injuries_list": injuries_input_data, "body_map_img_b64": captured_body_map_img, "user_notes": user_notes
+                        "injuries_list": injuries_input_data,
+                        "body_map_img_b64": captured_body_map_img,
+                        "user_notes": user_notes
                     }
-                    save_training_plan(target_athlete, team_code, str(plan_date), category, content, rpe_feeling, json.dumps(extra_log_info, ensure_ascii=False))
-                    if "dyn_injuries_user" in st.session_state: del st.session_state["dyn_injuries_user"]
-                    if "dyn_injuries" in st.session_state: del st.session_state["dyn_injuries"]
-                    st.success(f"已成功儲存 {target_athlete} 的訓練日誌！"); st.rerun()
+                    save_training_plan(target_athlete, str(plan_date), category, content, rpe_feeling, json.dumps(extra_log_info, ensure_ascii=False))
+                    
+                    if "dyn_injuries_user" in st.session_state:
+                        del st.session_state["dyn_injuries_user"]
+                    if "dyn_injuries" in st.session_state:
+                        del st.session_state["dyn_injuries"]
+
+                    st.success(f"成功儲存 {target_athlete} 於 {plan_date} 的訓練與精準傷病日誌！")
+                    st.rerun()
+                else:
+                    st.warning("請填寫課表細節與組數規劃 Please fill plan details!")
 
             st.markdown("---")
-            st.markdown("##### 獨立人體圖釘標記輔助工具 (點擊即可即時同步)")
+            st.markdown("##### 獨立人體圖釘點輔助工具（點擊圖面即可即時同步存檔截圖）")
+
             body_map_html = """<!DOCTYPE html>
             <html>
             <head>
             <style>
                 * { box-sizing: border-box; }
                 body { font-family: -apple-system, sans-serif; background: transparent; margin: 0; padding: 0; text-align: center; color: #0f172a; }
-                .map-outer-container { display: flex; justify-content: center; gap: 24px; background: #ffffff; padding: 16px; border-radius: 12px; border: 1px solid #cbd5e1; flex-wrap: wrap; }
+                .map-outer-container { display: flex; justify-content: center; gap: 24px; background: #ffffff; padding: 16px; border-radius: 12px; border: 1px solid #cbd5e1; flex-wrap: wrap; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
                 .body-card { width: 220px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; display: flex; flex-direction: column; align-items: center; }
                 .body-title { font-size: 14px; font-weight: 700; color: #2563eb; margin-bottom: 8px; }
                 .svg-wrapper { position: relative; width: 190px; height: 380px; cursor: crosshair; user-select: none; background: #ffffff; border-radius: 8px; border: 1px solid #cbd5e1; }
@@ -2184,13 +2251,13 @@ elif page == "課表紀錄 Training Plan":
                 .body-shape { fill: #f1f5f9; stroke: #475569; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
                 .body-line { fill: none; stroke: #94a3b8; stroke-width: 1; }
                 .pin-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
-                .pin-marker { position: absolute; transform: translate(-50%, -50%); width: 20px; height: 20px; border-radius: 50%; background: #ef4444; color: #ffffff; font-size: 11px; font-weight: bold; display: flex; align-items: center; justify-content: center; pointer-events: auto; }
+                .pin-marker { position: absolute; transform: translate(-50%, -50%); width: 20px; height: 20px; border-radius: 50%; background: #ef4444; color: #ffffff; font-size: 11px; font-weight: bold; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.2); pointer-events: auto; }
             </style>
             </head>
             <body>
                 <div class="map-outer-container">
                     <div class="body-card">
-                        <div class="body-title">正面 Front</div>
+                        <div class="body-title">正面肌肉輪廓 Front</div>
                         <div class="svg-wrapper" id="wFront">
                             <svg viewBox="0 0 200 400" id="svgF">
                                 <circle cx="100" cy="35" r="20" class="body-shape"/>
@@ -2206,7 +2273,7 @@ elif page == "課表紀錄 Training Plan":
                         </div>
                     </div>
                     <div class="body-card">
-                        <div class="body-title">背面 Back</div>
+                        <div class="body-title">背面肌肉輪廓 Back</div>
                         <div class="svg-wrapper" id="wBack">
                             <svg viewBox="0 0 200 400" id="svgB">
                                 <circle cx="100" cy="35" r="20" class="body-shape"/>
@@ -2234,46 +2301,79 @@ elif page == "課表紀錄 Training Plan":
                             const nativeSetter = pWin.Object.getOwnPropertyDescriptor(pWin.HTMLTextAreaElement.prototype, "value").set;
                             nativeSetter.call(el, val);
                             if (el._valueTracker) el._valueTracker.setValue('');
-                            el.focus(); el.dispatchEvent(new pWin.Event('input', { bubbles: true }));
-                            el.dispatchEvent(new pWin.Event('change', { bubbles: true })); el.blur();
-                        } catch(err) { el.value = val; el.dispatchEvent(new Event('input', { bubbles: true })); }
+                            el.focus();
+                            el.dispatchEvent(new pWin.Event('input', { bubbles: true }));
+                            el.dispatchEvent(new pWin.Event('change', { bubbles: true }));
+                            el.blur();
+                        } catch(err) {
+                            el.value = val;
+                            el.dispatchEvent(new Event('input', { bubbles: true }));
+                            el.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
                     }
 
                     function drawBodySilhouette(ctx, ox, oy) {
-                        ctx.save(); ctx.translate(ox, oy);
-                        ctx.fillStyle = "#f1f5f9"; ctx.strokeStyle = "#475569"; ctx.lineWidth = 1.5;
+                        ctx.save();
+                        ctx.translate(ox, oy);
+
+                        ctx.fillStyle = "#f1f5f9";
+                        ctx.strokeStyle = "#475569";
+                        ctx.lineWidth = 1.5;
+
                         ctx.beginPath(); ctx.arc(100, 35, 20, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
                         ctx.beginPath(); ctx.moveTo(92, 55); ctx.lineTo(92, 65); ctx.lineTo(108, 65); ctx.lineTo(108, 55); ctx.closePath(); ctx.fill(); ctx.stroke();
-                        ctx.beginPath(); ctx.moveTo(55, 75); ctx.bezierCurveTo(70, 70, 130, 70, 145, 75); ctx.lineTo(155, 120); ctx.lineTo(140, 125); ctx.lineTo(135, 180); ctx.lineTo(125, 230); ctx.lineTo(75, 230); ctx.lineTo(65, 180); ctx.lineTo(60, 125); ctx.lineTo(45, 120); ctx.closePath(); ctx.fill(); ctx.stroke();
+                        ctx.beginPath();
+                        ctx.moveTo(55, 75); ctx.bezierCurveTo(70, 70, 130, 70, 145, 75);
+                        ctx.lineTo(155, 120); ctx.lineTo(140, 125); ctx.lineTo(135, 180);
+                        ctx.lineTo(125, 230); ctx.lineTo(75, 230); ctx.lineTo(65, 180);
+                        ctx.lineTo(60, 125); ctx.lineTo(45, 120);
+                        ctx.closePath(); ctx.fill(); ctx.stroke();
+
                         ctx.beginPath(); ctx.moveTo(45, 120); ctx.lineTo(30, 180); ctx.lineTo(40, 185); ctx.lineTo(52, 130); ctx.closePath(); ctx.fill(); ctx.stroke();
                         ctx.beginPath(); ctx.moveTo(155, 120); ctx.lineTo(170, 180); ctx.lineTo(160, 185); ctx.lineTo(148, 130); ctx.closePath(); ctx.fill(); ctx.stroke();
                         ctx.beginPath(); ctx.moveTo(75, 230); ctx.lineTo(70, 320); ctx.lineTo(65, 380); ctx.lineTo(85, 380); ctx.lineTo(92, 320); ctx.lineTo(96, 230); ctx.closePath(); ctx.fill(); ctx.stroke();
                         ctx.beginPath(); ctx.moveTo(125, 230); ctx.lineTo(130, 320); ctx.lineTo(135, 380); ctx.lineTo(115, 380); ctx.lineTo(108, 320); ctx.lineTo(104, 230); ctx.closePath(); ctx.fill(); ctx.stroke();
-                        ctx.strokeStyle = "#94a3b8"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(100, 70); ctx.lineTo(100, 230); ctx.stroke();
+
+                        ctx.strokeStyle = "#94a3b8"; ctx.lineWidth = 1;
+                        ctx.beginPath(); ctx.moveTo(100, 70); ctx.lineTo(100, 230); ctx.stroke();
+
                         ctx.restore();
                     }
 
                     function generateSnapshot() {
-                        const cvs = document.createElement('canvas'); cvs.width = 440; cvs.height = 400;
-                        const ctx = cvs.getContext('2d'); ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, 440, 400);
-                        ctx.fillStyle = "#2563eb"; ctx.font = "bold 14px sans-serif"; ctx.fillText("正面 Front", 70, 20); ctx.fillText("背面 Back", 290, 20);
-                        drawBodySilhouette(ctx, 10, 0); drawBodySilhouette(ctx, 230, 0);
+                        const cvs = document.createElement('canvas');
+                        cvs.width = 440; cvs.height = 400;
+                        const ctx = cvs.getContext('2d');
+                        ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, 440, 400);
+
+                        ctx.fillStyle = "#2563eb"; ctx.font = "bold 14px sans-serif"; ctx.textAlign = "left";
+                        ctx.fillText("正面 Front", 70, 20); ctx.fillText("背面 Back", 290, 20);
+
+                        drawBodySilhouette(ctx, 10, 0);
+                        drawBodySilhouette(ctx, 230, 0);
+
                         mapPins.forEach((p, idx) => {
                             let px = p.v === 'f' ? (10 + (p.x / 100) * 200) : (230 + (p.x / 100) * 200);
                             let py = (p.y / 100) * 400;
                             ctx.fillStyle = "#ef4444"; ctx.beginPath(); ctx.arc(px, py, 10, 0, Math.PI * 2); ctx.fill();
-                            ctx.fillStyle = "#ffffff"; ctx.font = "bold 11px sans-serif"; ctx.textAlign = "center"; ctx.fillText(idx + 1, px, py + 4);
+                            ctx.fillStyle = "#ffffff"; ctx.font = "bold 11px sans-serif"; ctx.textAlign = "center";
+                            ctx.fillText(idx + 1, px, py + 4);
                         });
+
+                        const imgB64 = cvs.toDataURL('image/jpeg', 0.85);
                         const textAreas = window.parent.document.querySelectorAll('textarea');
                         let targetMapTA = null;
-                        textAreas.forEach(ta => { if ((ta.getAttribute('aria-label') || '').includes('body_map_img_b64')) targetMapTA = ta; });
-                        if (targetMapTA) syncToStreamlit(targetMapTA, cvs.toDataURL('image/jpeg', 0.85));
+                        textAreas.forEach(ta => {
+                            if ((ta.getAttribute('aria-label') || '').includes('body_map_img_b64')) targetMapTA = ta;
+                        });
+                        if (targetMapTA) syncToStreamlit(targetMapTA, imgB64);
                     }
 
                     function render() {
                         of.innerHTML = ''; ob.innerHTML = '';
                         mapPins.forEach((p, idx) => {
-                            const d = document.createElement('div'); d.className = 'pin-marker'; d.innerText = idx + 1;
+                            const d = document.createElement('div');
+                            d.className = 'pin-marker'; d.innerText = idx + 1;
                             d.style.left = p.x + '%'; d.style.top = p.y + '%';
                             if (p.v === 'f') of.appendChild(d); else ob.appendChild(d);
                         });
@@ -2293,61 +2393,106 @@ elif page == "課表紀錄 Training Plan":
                 </script>
             </body>
             </html>"""
+
             components.html(body_map_html, height=450, scrolling=False)
 
         with tab_view_plan:
-            st.subheader("訓練課表歷史與痛點趨勢 Archive")
-            if role in ["coach", "trainer"]:
-                team_athletes = get_team_athletes(team_code)
-                filter_user = st.selectbox("篩選選手日誌", ["全團隊選手"] + team_athletes)
-                query_user = None if filter_user == "全團隊選手" else filter_user
+            st.subheader("訓練課表與日誌歷史檔案 Training Log Archive")
+            if is_coach:
+                conn = get_db_connection()
+                c = conn.cursor()
+                c.execute("SELECT DISTINCT username FROM training_plans")
+                plan_users = [r[0] for r in c.fetchall()]
+                c.close()
+                conn.close()
+                filter_user = st.selectbox("篩選選手 Filter Athlete", ["全隊所有人 Entire Team"] + plan_users)
+                query_user = None if filter_user == "全隊所有人 Entire Team" else filter_user
             else:
-                query_user = u["username"]
+                query_user = user["username"]
 
-            plans = get_training_plans(team_code, username=query_user)
-            if not plans: st.warning("尚無日誌紀錄")
+            plans = get_training_plans(username=query_user)
+
+            if not plans:
+                st.warning("尚無訓練日誌紀錄 No Training Log Records")
             else:
-                st.markdown("##### 痛點等級復原趨勢圖 Pain Level Trend")
+                st.markdown("##### 部位疼痛指數復原趨勢圖 Pain Score Recovery Trend")
+
                 pain_rows = []
                 for p in plans:
                     p_date = p[2]
                     try:
-                        inj_list = json.loads(p[6]).get("injuries_list", [])
+                        parsed = json.loads(p[6])
+                        inj_list = parsed.get("injuries_list", [])
                         for inj in inj_list:
-                            pain_rows.append({"Date": p_date, "BodyArea": inj.get("area", "痛點"), "PainLevel": int(inj.get("level", 0))})
-                    except Exception: pass
+                            area = inj.get("area", f"部位 #{inj.get('id',1)}")
+                            lvl = inj.get("level", 0)
+                            pain_rows.append({"Date": p_date, "BodyArea": area, "PainLevel": int(lvl)})
+                    except Exception:
+                        continue
 
                 if pain_rows:
-                    df_pivot = pd.DataFrame(pain_rows).pivot_table(index='Date', columns='BodyArea', values='PainLevel', aggfunc='last').fillna(0)
+                    df_pain_raw = pd.DataFrame(pain_rows)
+                    df_pivot = df_pain_raw.pivot_table(index='Date', columns='BodyArea', values='PainLevel', aggfunc='last').fillna(0)
+                    df_pivot = df_pivot.sort_index()
                     st.line_chart(df_pivot)
+                else:
+                    st.caption("尚無傷病追蹤數據可繪製趨勢圖 No Injury Data for Line Chart")
 
                 st.markdown("---")
+                
                 for p in reversed(plans):
-                    p_id, p_user, p_date, p_cat, p_content, p_intensity, p_notes, _ = p
-                    with st.expander(f"📅 {p_date} ｜ 選手: {p_user} ｜ 類別: {p_cat} ｜ RPE: {p_intensity}"):
-                        try:
-                            pn = json.loads(p_notes)
-                            st.write(f"• 疲勞指數：`{pn.get('fatigue_score', '-')}/10` ｜ 睡眠：`{pn.get('total_sleep_hr', '-')} hr` ｜ 心率：`{pn.get('resting_hr', '-')} bpm`")
-                            col_t, col_m = st.columns([1.2, 0.8])
-                            with col_t:
-                                inj_list = pn.get("injuries_list", [])
+                    p_id, p_user, p_date, p_cat, p_content, p_intensity, p_notes, p_created = p
+                    parsed_notes = None
+                    try: parsed_notes = json.loads(p_notes)
+                    except Exception: parsed_notes = None
+
+                    with st.expander(f"日期 Date: {p_date} ｜ 選手 Athlete: {p_user} ｜ 類別: {p_cat} ｜ RPE: {p_intensity}"):
+                        if parsed_notes and isinstance(parsed_notes, dict):
+                            tot_s = parsed_notes.get('total_sleep_hr', 0)
+                            s_h = parsed_notes.get('sleep_hours', int(tot_s))
+                            s_m = parsed_notes.get('sleep_mins', int((tot_s - int(tot_s))*60))
+                            sleep_str = f"`{s_h}小時 {s_m}分`"
+
+                            inj_list = parsed_notes.get("injuries_list", [])
+                            st.markdown("**訓練與生理狀態：**")
+                            c_d1, c_d2, c_d3 = st.columns(3)
+                            with c_d1: st.write(f"• 訓練時長：`{parsed_notes.get('duration_min', '-')} 分鐘`")
+                            with c_d2: st.write(f"• 疲勞指數：`{parsed_notes.get('fatigue_score', '-')}/10` ｜ 睡眠：{sleep_str}")
+                            with c_d3: st.write(f"• 心率統計：`{parsed_notes.get('resting_hr', '-')} bpm`")
+
+                            col_inj_text, col_inj_map = st.columns([1.2, 0.8])
+                            with col_inj_text:
+                                st.markdown("**痛點部位、腳位與 13 項疼痛性質紀錄 Injury Details：**")
                                 if inj_list:
                                     for inj in inj_list:
                                         lvl = inj.get("level", 0)
-                                        area = inj.get("area")
-                                        if lvl >= 5: st.markdown(f"• :red[**{area}** ｜ 疼痛: {lvl}/10]")
-                                        elif lvl > 0: st.markdown(f"• :orange[**{area}** ｜ 疼痛: {lvl}/10]")
-                                        else: st.markdown(f"• :green[**{area}** ｜ 痊癒 0/10]")
-                            with col_m:
-                                if pn.get("body_map_img_b64"): st.image(pn["body_map_img_b64"], caption="人體標記圖", use_container_width=True)
-                            st.markdown(f"**課表細節：**\n```text\n{p_content}\n```")
-                            if pn.get("user_notes"): st.markdown(f"**叮嚀/評語：**\n```text\n{pn.get('user_notes')}\n```")
-                        except Exception:
-                            st.markdown(f"**課表細節：**\n```text\n{p_content}\n```")
+                                        area = inj.get("area", f"痛點 #{inj.get('id',1)}")
+                                        leg = inj.get("leg_side", "不分腳位")
+                                        ptypes = inj.get("pain_types", [])
+                                        ptypes_str = f" ｜ 性質: {', '.join(ptypes)}" if ptypes else ""
+                                        n_str = inj.get("notes", "")
+                                        n_fmt = f" ({n_str})" if n_str else ""
+                                        
+                                        if lvl >= 5: st.markdown(f"• :red[**{area}** ({leg}) ｜ 疼痛 VAS: {lvl}/10{ptypes_str}{n_fmt}]")
+                                        elif lvl > 0: st.markdown(f"• :orange[**{area}** ({leg}) ｜ 疼痛 VAS: {lvl}/10 (復原中){ptypes_str}{n_fmt}]")
+                                        else: st.markdown(f"• :green[**{area}** ({leg}) ｜ 疼痛 VAS: 0/10 (痊癒){ptypes_str}{n_fmt}]")
+                                else: st.markdown(":green[良好無傷病 No Active Injury]")
 
-                        if role in ["coach", "trainer"] or p_user == u["username"]:
-                            if st.button(f"🗑️ 刪除日誌 ID {p_id}", key=f"del_plan_{p_id}"):
-                                delete_training_plan(p_id); st.rerun()
+                            with col_inj_map:
+                                if "body_map_img_b64" in parsed_notes and parsed_notes["body_map_img_b64"]:
+                                    st.image(parsed_notes["body_map_img_b64"], caption="當時人體標記圖 Body Map Snapshot", use_container_width=True)
+
+                            st.markdown(f"**課表細節：**\n```text\n{p_content}\n```")
+                            u_notes = parsed_notes.get("user_notes", "")
+                            if u_notes:
+                                st.markdown(f"**動作感覺與教練叮嚀：**\n```text\n{u_notes}\n```")
+                        else:
+                            st.markdown(f"**課表細節 Details：**\n```text\n{p_content}\n```")
+                        
+                        if is_coach or p_user == user["username"]:
+                            if st.button(f"刪除日誌 Log ID {p_id}", key=f"del_plan_{p_id}"):
+                                delete_training_plan(p_id)
+                                st.rerun()
 
 # ==================== 【頁面 9：歷史分析紀錄】 ====================
 elif page == "歷史分析紀錄 History Records":
