@@ -406,20 +406,46 @@ def save_record(*args, **kwargs):
     c.close()
     conn.close()
 
-def get_user_records(team_code, username=None, module=None):
+def get_user_records(*args, **kwargs):
+    """
+    全相容性歷史紀錄查詢函數
+    支援 get_user_records(username), get_user_records(username, module),
+    get_user_records(username=..., module=...) 等所有調用方式
+    """
     conn = get_db_connection()
     c = conn.cursor()
-    query = "SELECT id, username, module, title, details, timestamp FROM records WHERE team_code = %s"
-    params = [team_code]
-    if username:
-        query += " AND username = %s"; params.append(username)
-    if module:
-        query += " AND module = %s"; params.append(module)
+    
+    username = kwargs.get("username", None)
+    module = kwargs.get("module", kwargs.get("category", None))
+    
+    if username is None and len(args) > 0:
+        username = args[0]
+    if module is None and len(args) > 1:
+        module = args[1]
+        
+    query = "SELECT id, username, module, title, details, timestamp FROM records"
+    params = []
+    where_clauses = []
+    
+    if username and str(username).strip() and str(username) != "None":
+        where_clauses.append("username = %s")
+        params.append(str(username))
+    if module and str(module).strip() and str(module) != "None":
+        where_clauses.append("module = %s")
+        params.append(str(module))
+        
+    if where_clauses:
+        query += " WHERE " + " AND ".join(where_clauses)
     query += " ORDER BY id DESC"
+    
     c.execute(query, tuple(params))
     rows = c.fetchall()
-    c.close(); conn.close()
+    c.close()
+    conn.close()
     return rows
+
+# 別名相容，確保舊有 get_records 呼叫亦能正常運行
+get_records = get_user_records
 
 def update_record_details(record_id, updated_details_dict):
     conn = get_db_connection()
