@@ -182,22 +182,15 @@ def hash_password(password):
     return hashlib.sha256(password.encode('utf-8')).hexdigest()
     
 def delete_user_account(username):
-    """
-    刪除使用者帳號及其關聯之所有歷史紀錄與課表
-    """
     conn = get_db_connection()
     c = conn.cursor()
-    
-    # 刪除使用者主帳號
     c.execute("DELETE FROM users WHERE username = %s", (username,))
-    
-    # 一併清理該使用者的歷史紀錄與課表
     c.execute("DELETE FROM records WHERE username = %s", (username,))
     c.execute("DELETE FROM training_plans WHERE username = %s", (username,))
-    
     conn.commit()
     c.close()
     conn.close()
+
 def register_user(username, password, role, team_code, email):
     username = username.strip()
     team_code = team_code.strip().upper()
@@ -382,7 +375,7 @@ def update_competition(comp_id, name, start_date, end_date, notes):
     cur = conn.cursor()
     cur.execute("""
         UPDATE competitions 
-        SET name = %s, start_date = %s, end_date = %s, notes = %s
+        SET comp_name = %s, comp_date = %s, end_date = %s, notes = %s
         WHERE id = %s
     """, (name, str(start_date), str(end_date), notes, comp_id))
     conn.commit()
@@ -390,19 +383,13 @@ def update_competition(comp_id, name, start_date, end_date, notes):
     conn.close()
     
 def save_record(*args, **kwargs):
-    """
-    全相容性紀錄儲存函數
-    能自動相容 4 個或 5 個參數 (含/不含 team_code)，支援位置與關鍵字引數
-    """
     conn = get_db_connection()
     c = conn.cursor()
     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     if len(args) == 5:
-        # username, team_code, module, title, details_dict
         username, _, module, title, details_dict = args
     elif len(args) == 4:
-        # username, module, title, details_dict
         username, module, title, details_dict = args
     else:
         username = kwargs.get("username", args[0] if len(args) > 0 else "")
@@ -424,11 +411,6 @@ def save_record(*args, **kwargs):
     conn.close()
 
 def get_user_records(*args, **kwargs):
-    """
-    全相容性歷史紀錄查詢函數
-    支援 get_user_records(username), get_user_records(username, module),
-    get_user_records(username=..., module=...) 等所有調用方式
-    """
     conn = get_db_connection()
     c = conn.cursor()
     
@@ -461,7 +443,6 @@ def get_user_records(*args, **kwargs):
     conn.close()
     return rows
 
-# 別名相容，確保舊有 get_records 呼叫亦能正常運行
 get_records = get_user_records
 
 def update_record_details(record_id, updated_details_dict):
@@ -488,11 +469,6 @@ def save_training_plan(username, team_code, plan_date, category, content, intens
     c.close(); conn.close()
 
 def get_training_plans(*args, **kwargs):
-    """
-    全相容性訓練課表查詢函數
-    支援 get_training_plans(username), get_training_plans(team_code, username),
-    get_training_plans(username=...) 等所有呼叫方式
-    """
     conn = get_db_connection()
     c = conn.cursor()
     
@@ -614,8 +590,149 @@ nav_options = [
 
 page = st.sidebar.radio("請選擇功能模組：", nav_options)
 
+# ==================== 【頁面 1：系統首頁 Home】 ====================
+if page == "系統首頁 Home":
+    st.title("🏃 HURDEX 跨欄運動技術與防護分析系統")
+    st.markdown("##### 結合運科視訊量測、防護日誌與訓練追蹤的跨欄專用分析平台")
+    st.markdown("---")
+
+    if st.session_state["user_info"] is None:
+        tab_login, tab_reg, tab_reset = st.tabs(["🔐 帳號登入 Login", "📝 註冊帳號 Register", "🔑 重設密碼 Reset Password"])
+        
+        with tab_login:
+            st.subheader("使用者登入")
+            l_user = st.text_input("帳號 Username", key="l_user")
+            l_pass = st.text_input("密碼 Password", type="password", key="l_pass")
+            if st.button("登入系統 Login", key="btn_login", use_container_width=True):
+                ok, res = check_login(l_user, l_pass)
+                if ok:
+                    st.session_state["user_info"] = res
+                    st.success(f"歡迎回來，{res['username']}！")
+                    st.rerun()
+                else:
+                    st.error(res)
+
+        with tab_reg:
+            st.subheader("註冊新帳號")
+            r_user = st.text_input("帳號 Username", key="r_user")
+            r_pass = st.text_input("密碼 Password", type="password", key="r_pass")
+            r_email = st.text_input("電子信箱 Email", key="r_email")
+            r_role = st.selectbox("身分 Role", ["player", "coach", "trainer"], format_func=lambda x: {"player": "選手 Athlete", "coach": "教練 Coach", "trainer": "運動防護員 Trainer"}[x], key="r_role")
+            
+            r_team = ""
+            if r_role == "coach":
+                gen_team = generate_random_team_code()
+                c_code = st.text_input("請輸入教練專用邀請碼 (預設: 09290808)", key="r_ccode")
+                if c_code == COACH_SECRET_CODE:
+                    st.success(f"教練權限核可！系統自動為您生成新團隊碼：{gen_team}")
+                    r_team = gen_team
+                else:
+                    st.warning("請輸入正確的教練邀請碼以生成團隊碼")
+            elif r_role == "trainer":
+                t_code = st.text_input("請輸入防護員專用邀請碼", key="r_tcode")
+                r_team = st.text_input("請輸入要加入的團隊碼 Team Code", key="r_team_t")
+            else:
+                r_team = st.text_input("請輸入團隊碼 Team Code (由教練提供)", key="r_team_p")
+
+            if st.button("確認註冊 Register", key="btn_reg", use_container_width=True):
+                if r_role == "coach" and st.session_state.get("r_ccode") != COACH_SECRET_CODE:
+                    st.error("教練邀請碼錯誤！")
+                else:
+                    ok, msg = register_user(r_user, r_pass, r_role, r_team, r_email)
+                    if ok:
+                        st.success(msg)
+                    else:
+                        st.error(msg)
+
+        with tab_reset:
+            st.subheader("忘記密碼 / 重設密碼")
+            rst_user = st.text_input("請輸入帳號 Username", key="rst_user")
+            if st.button("索取 6 位數驗證碼", key="btn_req_otp"):
+                ok, msg = request_password_reset(rst_user)
+                if ok: st.success(msg)
+                else: st.error(msg)
+
+            st.markdown("---")
+            otp_code = st.text_input("請輸入驗證碼 OTP Code", key="rst_otp")
+            new_pass = st.text_input("請輸入新密碼 New Password", type="password", key="rst_new_pass")
+            if st.button("確認修改密碼 Reset Password", key="btn_confirm_rst"):
+                ok, msg = verify_and_reset_password(rst_user, otp_code, new_pass)
+                if ok: st.success(msg)
+                else: st.error(msg)
+    else:
+        u = st.session_state["user_info"]
+        st.success(f"🎉 歡迎使用 HURDEX 運科系統，{u['username']}！您的團隊碼為：`{u['team_code']}`")
+        
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.info("📐 **角度分析**\n\n上傳攻欄影片，精準量測軀幹前傾角與關節角。")
+        with c2:
+            st.info("⏱️ **欄間秒數與速度**\n\n打點紀錄起跑至過欄耗時，自動計算分段速度。")
+        with c3:
+            st.info("🩺 **防護與訓練日誌**\n\n紀錄身體痛點、疲勞度 RPE 與防護員復健建議。")
+
+# ==================== 【頁面 2：運動防護與傷勢評估】 ====================
+elif page == "運動防護與傷勢評估 Injury & Defense Feedback":
+    st.title("🩺 運動防護與傷勢報告 Injury & Defense Feedback")
+    st.markdown("---")
+
+    if st.session_state["user_info"] is None:
+        st.warning("請先登入帳號")
+    else:
+        u = st.session_state["user_info"]
+        team_code = u["team_code"]
+        role = u["role"]
+
+        if role in ["coach", "trainer"]:
+            tab_tfb, tab_listfb = st.tabs(["✍️ 新增/開立防護建議報告", "📋 團隊防護建議歷史紀錄"])
+            
+            with tab_tfb:
+                team_athletes = get_team_athletes(team_code)
+                if not team_athletes:
+                    st.warning("團隊目前尚無選手帳號")
+                else:
+                    with st.form("form_injury_feedback"):
+                        sel_athlete = st.selectbox("選擇選手 Select Athlete", team_athletes)
+                        fb_date = st.date_input("評估日期 Date", value=datetime.date.today())
+                        body_part = st.text_input("傷痛部位 (例: 右大腿後側肌群 / 左腳踝跟腱)")
+                        status_tag = st.selectbox("傷勢狀態評估", ["🔴 需暫停專項訓練 (Rest required)", "🟡 減量運科訓練 (Modified training)", "🟢 正常訓練兼防護觀察 (Full with monitoring)"])
+                        treatment_advice = st.text_area("防護員處置與復健建議 Treatment & Rehab Advice", height=120)
+                        
+                        if st.form_submit_button("送出防護診斷報告", use_container_width=True):
+                            if body_part.strip() and treatment_advice.strip():
+                                save_injury_feedback(sel_athlete, u["username"], team_code, fb_date, body_part.strip(), status_tag, treatment_advice.strip())
+                                st.success("防護建議報告已成功送出！")
+                                st.rerun()
+                            else:
+                                st.warning("請填寫部位與建議內容")
+
+            with tab_listfb:
+                feedbacks = get_injury_feedbacks(team_code)
+                if not feedbacks:
+                    st.info("目前尚無防護回饋紀錄")
+                else:
+                    for fb in feedbacks:
+                        fb_id, a_user, t_user, f_date, b_part, s_tag, advice, c_at = fb
+                        with st.expander(f"📅 {f_date} ｜ 選手: {a_user} ｜ 部位: {b_part} ｜ {s_tag}"):
+                            st.write(f"• **防護員**: {t_user}")
+                            st.write(f"• **處置與建議**: \n```text\n{advice}\n```")
+                            if st.button("🗑️ 刪除這筆報告", key=f"del_fb_{fb_id}"):
+                                delete_injury_feedback(fb_id)
+                                st.rerun()
+        else:
+            st.subheader("我的防護建議與傷勢診斷報告")
+            my_feedbacks = get_injury_feedbacks(team_code, athlete_username=u["username"])
+            if not my_feedbacks:
+                st.info("尚無防護員開立的報告")
+            else:
+                for fb in my_feedbacks:
+                    fb_id, a_user, t_user, f_date, b_part, s_tag, advice, c_at = fb
+                    with st.expander(f"📅 {f_date} ｜ 部位: {b_part} ｜ 狀態: {s_tag}"):
+                        st.write(f"• **評估防護員**: {t_user}")
+                        st.write(f"• **復健處置與建議**: \n```text\n{advice}\n```")
+
 # ==================== 【頁面 3：比賽行事曆 (賽事總覽依日期由近到遠排序)】 ====================
-if page == "比賽行事曆 Competition Calendar":
+elif page == "比賽行事曆 Competition Calendar":
     st.title("🏆 團隊比賽行事曆與賽事倒數")
     st.markdown("---")
 
@@ -686,7 +803,6 @@ if page == "比賽行事曆 Competition Calendar":
             "📋 賽事總覽清單"
         ])
 
-        # ------------------ 分頁 1：賽事月曆視圖 ------------------
         with tab_cal_view:
             import calendar
             c_y, c_m = st.columns([1, 1])
@@ -755,7 +871,6 @@ if page == "比賽行事曆 Competition Calendar":
             html_cal += "</tbody></table>"
             st.markdown(html_cal, unsafe_allow_html=True)
 
-        # ------------------ 分頁 2：新增賽事日程 ------------------
         with tab_add_comp:
             with st.form("form_add_comp"):
                 comp_name = st.text_input("賽事名稱 (例: 全國中等學校運動會)")
@@ -771,9 +886,7 @@ if page == "比賽行事曆 Competition Calendar":
                     else:
                         st.warning("請輸入賽事名稱")
 
-        # ------------------ 分頁 3：賽事總覽清單 (由近到遠排序) ------------------
         with tab_list_comp:
-            # 依賽事開始日期由近到遠進行排序
             def parse_comp_start(c):
                 try:
                     return datetime.datetime.strptime(c[3], "%Y-%m-%d").date()
@@ -797,7 +910,6 @@ if page == "比賽行事曆 Competition Calendar":
                     if role in ["coach", "trainer"] or c_user == u["username"]:
                         col_edit, col_del = st.columns([1, 1])
                         
-                        # 編輯彈出視窗
                         with col_edit:
                             with st.popover("✏️ 編輯賽事與備註"):
                                 with st.form(f"edit_comp_form_{c_id}"):
@@ -1448,8 +1560,9 @@ elif page == "殘影軌跡 Ghosting Track":
                     if st.form_submit_button("儲存至團隊資料庫"):
                         u = st.session_state["user_info"]
                         save_record(u["username"], u["team_code"], "攻欄至落地殘影軌跡 Ghosting Track", rec_title_ghost, {"image_b64": captured_ghost_img, "saved_at": str(datetime.datetime.now())})
-                        st.success("儲存成功！")    
-# ==================== 【頁面：雙影同步 Dual Video Sync】 ====================
+                        st.success("儲存成功！")
+
+# ==================== 【頁面 6：雙影同步 Dual Video Sync】 ====================
 elif page == "雙影同步 Dual Video Sync":
     st.title("🎬 雙影同步與關鍵影格角度分析 Dual Video Sync & Angle Analysis")
     st.markdown("---")
@@ -1472,7 +1585,6 @@ elif page == "雙影同步 Dual Video Sync":
             "📐 雙影畫面擷取與角度分析"
         ])
 
-        # ------------------ 分頁 1：雙影對齊與相對同步播放 ------------------
         with tab_sync_play:
             dual_play_html_template = """<!DOCTYPE html>
             <html>
@@ -1676,7 +1788,6 @@ elif page == "雙影同步 Dual Video Sync":
             )
             components.html(dual_play_html_code, height=580, scrolling=False)
 
-        # ------------------ 分頁 2：雙影畫面擷取與角度分析 ------------------
         with tab_dual_angle:
             st.info("💡 **操作指南**：在兩部影片播放器中各自暫停於關鍵動作點，點擊「📷 擷取畫面至畫布」，接著用滑鼠在畫布上連續點擊 3 點標記關節角度，最後點擊「🚀 合成兩圖與角度數據」。")
             
@@ -1954,7 +2065,8 @@ elif page == "雙影同步 Dual Video Sync":
                         )
                         st.success("成功儲存至團隊歷史數據庫！")
                         st.rerun()
-# ==================== 【頁面 7：跨期數據對比 (已精簡為「速度 m/s」與「耗時 秒 s」雙指標)】 ====================
+
+# ==================== 【頁面 7：跨期數據對比 (精簡雙指標)】 ====================
 elif page == "跨期數據對比 Longitudinal Comparison":
     st.title("跨期數據對比分析 Longitudinal Comparison Analysis")
     st.markdown("---")
@@ -1979,7 +2091,6 @@ elif page == "跨期數據對比 Longitudinal Comparison":
             if not records:
                 st.warning(f"選手 {target_user} 在團隊中尚無 {mod_choice} 的歷史紀錄。")
             else:
-                # 【隱藏 ID 與時間】：純粹顯示紀錄標題 (同名自動加上編號如: 標題 (2))
                 title_counts = {}
                 rec_options = {}
                 for r in records:
@@ -1999,14 +2110,12 @@ elif page == "跨期數據對比 Longitudinal Comparison":
                     st.subheader("多日數據對比明細")
 
                     if mod_choice == "欄間秒數及速度計算 Hurdle Time & Speed Calculation":
-                        # 已精簡為「分段平均速度 (m/s)」與「單段耗時 (秒 s)」兩個選項
                         chart_metric = st.radio(
                             "選擇折線圖展示指標：", 
                             ["分段平均速度 (m/s)", "單段耗時 (秒 s)"], 
                             horizontal=True
                         )
 
-                        # 【標準 11 個比賽區段】：純文字標籤，最後一段為 H10->終點
                         ORDERED_SEGMENTS = [
                             "起跑->H1", "H1->H2", "H2->H3", "H3->H4", "H4->H5",
                             "H5->H6", "H6->H7", "H7->H8", "H8->H9", "H9->H10", "H10->終點"
@@ -2018,10 +2127,9 @@ elif page == "跨期數據對比 Longitudinal Comparison":
                             rec = rec_options[k]
                             tm = json.loads(rec[4]).get("timer_metrics", {})
                             splits = tm.get("splits", [])
-                            rec_label = k  # 純標題名稱（如：全田、暑假、秋季盃）
+                            rec_label = k
 
                             for idx, s in enumerate(splits):
-                                # 以打點順序 (0~10) 對應標準名稱
                                 if idx < len(ORDERED_SEGMENTS):
                                     seg = ORDERED_SEGMENTS[idx]
                                 else:
@@ -2108,7 +2216,8 @@ elif page == "跨期數據對比 Longitudinal Comparison":
                                 if isinstance(angles, list):
                                     for a in angles:
                                         st.write(f"• {a.get('name')}：`{a.get('value')}`")
-# ==================== 【頁面 6：課表紀錄】 ====================
+
+# ==================== 【頁面 8：課表紀錄】 ====================
 elif page == "課表紀錄 Training Plan":
     st.title("課表與訓練日誌紀錄 Training Plan & Daily Log")
     st.markdown("---")
@@ -2139,7 +2248,6 @@ elif page == "課表紀錄 Training Plan":
             else:
                 target_athlete = user["username"]
 
-            # 自動載入上一次紀錄的傷病部位
             if "dyn_injuries_user" not in st.session_state or st.session_state["dyn_injuries_user"] != target_athlete:
                 try:
                     prev_plans = get_training_plans(target_athlete)
@@ -2172,7 +2280,6 @@ elif page == "課表紀錄 Training Plan":
                 st.session_state["dyn_injuries"] = carried_injuries
                 st.session_state["dyn_injuries_user"] = target_athlete
 
-            # 選單選項定義（已將腳踝與腳底獨立拆分）
             BODY_PART_OPTIONS = [
                 "頭頸部 Head & Neck", "右肩/三角肌 Right Shoulder Deltoid", "左肩/三角肌 Left Shoulder Deltoid",
                 "胸大肌 Pectoralis Major", "腹直肌/核心 Rectus Abdominis", "下背/腰椎肌群 Lower Back Lumbar",
@@ -2551,7 +2658,8 @@ elif page == "課表紀錄 Training Plan":
                             if st.button(f"刪除日誌 Log ID {p_id}", key=f"del_plan_{p_id}"):
                                 delete_training_plan(p_id)
                                 st.rerun()
-# ==================== 【頁面 7：歷史分析紀錄】 ====================
+
+# ==================== 【頁面 9：歷史分析紀錄】 ====================
 elif page == "歷史分析紀錄 History Records":
     st.title("歷史分析紀錄庫 History Records Repository")
     st.markdown("---")
@@ -2585,10 +2693,8 @@ elif page == "歷史分析紀錄 History Records":
 
                         st.markdown(f"#### [{rec_module}] {rec_title}")
 
-                        # 採用左右雙欄位對齊 (左邊：圖片與分析筆記 / 右邊：數據明細)
                         col_d1, col_d2 = st.columns([1, 1])
 
-                        # ------------------ 左欄：截圖與筆記輸入 ------------------
                         with col_d1:
                             if isinstance(rec_details, dict) and rec_details.get("image_b64"):
                                 st.image(rec_details["image_b64"], caption="畫面截圖 Composite Image", use_container_width=True)
@@ -2618,12 +2724,10 @@ elif page == "歷史分析紀錄 History Records":
                                         delete_record(rec_id)
                                         st.rerun()
 
-                        # ------------------ 右欄：數據明細 ------------------
                         with col_d2:
                             st.markdown("##### 📊 數據明細 Data Details")
                             
                             if isinstance(rec_details, dict):
-                                # 1. 關鍵影格角度量測解析
                                 if "angle_metrics" in rec_details:
                                     am = rec_details["angle_metrics"]
                                     if isinstance(am, str):
@@ -2636,7 +2740,6 @@ elif page == "歷史分析紀錄 History Records":
                                             if isinstance(item, dict):
                                                 st.write(f"• {item.get('name', '角度')}：`{item.get('value', '0°')}`")
 
-                                # 2. 欄間秒數及速度全相容解析邏輯
                                 tm = rec_details.get("timer_metrics", rec_details.get("timer_data", None))
                                 if tm is None and ("splits" in rec_details or "total_time" in rec_details):
                                     tm = rec_details
