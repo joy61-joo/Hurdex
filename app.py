@@ -1658,23 +1658,18 @@ elif page == "雙影同步 Dual Video Sync":
                 <style>
                     * {{ box-sizing: border-box; }}
                     body {{ font-family: -apple-system, sans-serif; background: transparent; color: #0f172a; margin: 0; padding: 0; }}
-                    
                     .main-slider-box {{ background: #ffffff; border: 2px solid #2563eb; padding: 12px 16px; border-radius: 10px; margin-bottom: 14px; box-shadow: 0 2px 4px rgba(37,99,235,0.1); }}
                     .top-bar {{ display: flex; gap: 8px; margin-bottom: 12px; background: #ffffff; padding: 10px 14px; border-radius: 8px; border: 1px solid #e2e8f0; align-items: center; justify-content: center; flex-wrap: wrap; }}
-                    
                     .btn-align-play {{ background: #059669; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; }}
                     .btn-align-jump {{ background: #d97706; color: #fff; border: none; padding: 8px 14px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; }}
                     .btn-sync {{ background: #2563eb; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; }}
                     .btn-reset {{ background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; padding: 8px 14px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; }}
-                    
                     .layout {{ display: flex; gap: 14px; width: 100%; }}
                     .vid-card {{ flex: 1; background: #ffffff; border-radius: 10px; border: 1px solid #e2e8f0; padding: 12px; }}
                     video {{ width: 100%; border-radius: 6px; max-height: 360px; object-fit: contain; background: #000; display: block; }}
-                    
                     .ctrl-row {{ display: flex; gap: 6px; margin-top: 8px; align-items: center; flex-wrap: wrap; }}
                     .btn-sm {{ background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; padding: 5px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; }}
                     .btn-set-align {{ background: #2563eb; color: #fff; border: none; padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; }}
-                    
                     select {{ background: #ffffff; color: #0f172a; border: 1px solid #cbd5e1; padding: 4px; border-radius: 4px; font-size: 12px; font-weight: bold; }}
                     input[type=range] {{ width: 100%; height: 6px; border-radius: 3px; background: #cbd5e1; outline: none; cursor: pointer; }}
                 </style>
@@ -1696,7 +1691,6 @@ elif page == "雙影同步 Dual Video Sync":
                 </div>
                 
                 <div class="layout">
-                    <!-- 影片 A 卡片 -->
                     <div class="vid-card">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
                             <h5 style="margin:0; color:#2563eb; font-size:14px;">影片 A：{file_a.name}</h5>
@@ -1704,7 +1698,6 @@ elif page == "雙影同步 Dual Video Sync":
                         </div>
                         <video id="vidA" muted playsinline controls><source src="data:{mime_a};base64,{b64_a}"></video>
                         <input type="range" id="sliderA" min="0" max="100" value="0" step="0.01" style="margin-top:6px;">
-                        
                         <div class="ctrl-row">
                             <button class="btn-set-align" onclick="setAlignA()">📌 設為 A 對齊點</button>
                             <button class="btn-sm" onclick="stepA(-0.033)">-1幀</button>
@@ -1720,7 +1713,6 @@ elif page == "雙影同步 Dual Video Sync":
                         <div id="txtAlignA" style="margin-top:8px; font-size:12px; color:#059669; font-weight:bold;">📍 影片 A 對齊點：未設定 (0.00s)</div>
                     </div>
 
-                    <!-- 影片 B 卡片 -->
                     <div class="vid-card">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
                             <h5 style="margin:0; color:#d97706; font-size:14px;">影片 B：{file_b.name}</h5>
@@ -1728,7 +1720,6 @@ elif page == "雙影同步 Dual Video Sync":
                         </div>
                         <video id="vidB" muted playsinline controls><source src="data:{mime_b};base64,{b64_b}"></video>
                         <input type="range" id="sliderB" min="0" max="100" value="0" step="0.01" style="margin-top:6px;">
-                        
                         <div class="ctrl-row">
                             <button class="btn-set-align" style="background:#d97706;" onclick="setAlignB()">📌 設為 B 對齊點</button>
                             <button class="btn-sm" onclick="stepB(-0.033)">-1幀</button>
@@ -1852,26 +1843,21 @@ elif page == "雙影同步 Dual Video Sync":
                 <style>
                     * {{ box-sizing: border-box; }}
                     body {{ font-family: -apple-system, sans-serif; background: transparent; color: #0f172a; margin: 0; padding: 0; }}
-                    
                     .angle-container {{ display: flex; gap: 14px; width: 100%; }}
                     .card {{ flex: 1; background: #ffffff; padding: 12px; border-radius: 10px; border: 1px solid #e2e8f0; text-align: center; }}
-                    
                     video {{ width: 100%; max-height: 240px; background: #000; border-radius: 6px; object-fit: contain; }}
                     canvas {{ width: 100%; background: #0f172a; border-radius: 6px; cursor: crosshair; margin-top: 8px; }}
-                    
                     .btn-group {{ display: flex; gap: 6px; justify-content: center; margin-top: 6px; flex-wrap: wrap; }}
                     button {{ padding: 6px 12px; border-radius: 4px; border: none; cursor: pointer; font-weight: bold; font-size: 12px; }}
                     .btn-cap {{ background: #2563eb; color: white; }}
                     .btn-clr {{ background: #ef4444; color: white; }}
                     .btn-sm {{ background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; }}
                     .btn-upload {{ background: #059669; color: white; font-size: 14px; padding: 10px 24px; margin-top: 14px; border-radius: 6px; }}
-                    
                     .angle-info {{ background: #f8fafc; padding: 6px; border-radius: 4px; font-size: 12px; margin-top: 6px; color: #2563eb; font-weight: bold; border: 1px solid #cbd5e1; }}
                 </style>
             </head>
             <body>
                 <div class="angle-container">
-                    <!-- 卡片 A -->
                     <div class="card">
                         <div style="font-weight:bold; font-size:13px; color:#2563eb; margin-bottom:4px;">影片 A：{file_a.name}</div>
                         <video id="vSrcA" controls playsinline><source src="data:{mime_a};base64,{b64_a}"></video>
@@ -1885,7 +1871,6 @@ elif page == "雙影同步 Dual Video Sync":
                         <div class="angle-info" id="infoA">角度：尚未量測 (請先擷取畫面並點擊 3 點)</div>
                     </div>
 
-                    <!-- 卡片 B -->
                     <div class="card">
                         <div style="font-weight:bold; font-size:13px; color:#d97706; margin-bottom:4px;">影片 B：{file_b.name}</div>
                         <video id="vSrcB" controls playsinline><source src="data:{mime_b};base64,{b64_b}"></video>
@@ -2046,7 +2031,7 @@ elif page == "雙影同步 Dual Video Sync":
         captured_dual_img = st.text_area("dual_img_b64", key="captured_dual_img", label_visibility="collapsed")
         captured_dual_json = st.text_area("dual_data_json", key="captured_dual_json", label_visibility="collapsed")
 
-       if captured_dual_img and captured_dual_json:
+        if captured_dual_img and captured_dual_json:
             st.success("📸 已成功擷取並合成雙影角度分析畫面！")
             st.image(captured_dual_img, caption="雙影對比與角度量測合成圖", use_container_width=True)
 
@@ -2055,8 +2040,6 @@ elif page == "雙影同步 Dual Video Sync":
                     rec_title_dual = st.text_input("紀錄名稱", value=f"雙影角度對比 {file_a.name} vs {file_b.name}")
                     if st.form_submit_button("💾 儲存至團隊數據庫", use_container_width=True):
                         u = st.session_state["user_info"]
-                        
-                        # 解析角度數據並透過相容語法儲存
                         try:
                             parsed_metrics = json.loads(captured_dual_json)
                         except Exception:
