@@ -614,9 +614,8 @@ nav_options = [
 
 page = st.sidebar.radio("請選擇功能模組：", nav_options)
 
-st.session_state["user_info"]
 # ==================== 【頁面 3：比賽行事曆 (賽事總覽依日期由近到遠排序)】 ====================
-elif page == "比賽行事曆 Competition Calendar":
+if page == "比賽行事曆 Competition Calendar":
     st.title("🏆 團隊比賽行事曆與賽事倒數")
     st.markdown("---")
 
