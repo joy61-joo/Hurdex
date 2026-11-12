@@ -49,6 +49,16 @@ st.markdown("""
         border: 1px solid #cbd5e1 !important; border-radius: 6px !important;
     }
     div[data-testid="stExpander"] { background-color: #ffffff !important; border: 1px solid #e2e8f0 !important; border-radius: 8px !important; }
+    div[data-testid="stMultiSelect"]:has(input[aria-label*="疼痛性質"]) [data-baseweb="tag"] {
+        background-color: #dc2626 !important;
+        color: #ffffff !important;
+        border-radius: 6px !important;
+        border: none !important;
+    }
+    div[data-testid="stMultiSelect"]:has(input[aria-label*="疼痛性質"]) [data-baseweb="tag"] * {
+        color: #ffffff !important;
+        fill: #ffffff !important;
+    }
     div[data-testid="stTextArea"]:has(textarea[aria-label*="body_map_img_b64"]),
     div[data-testid="stTextArea"]:has(textarea[aria-label*="angle_img_b64"]),
     div[data-testid="stTextArea"]:has(textarea[aria-label*="angle_data_json"]),
@@ -2129,9 +2139,18 @@ elif page == "課表紀錄 Training Plan":
 
                 if pain_rows:
                     df_pain_raw = pd.DataFrame(pain_rows)
-                    df_pivot = df_pain_raw.pivot_table(index='Date', columns='BodyArea', values='PainLevel', aggfunc='last').fillna(0)
-                    df_pivot = df_pivot.sort_index()
-                    st.line_chart(df_pivot)
+                    df_pain_agg = df_pain_raw.groupby(['Date', 'BodyArea'], as_index=False)['PainLevel'].last()
+                    pain_chart = alt.Chart(df_pain_agg).mark_line(point=True).encode(
+                        x=alt.X('Date:N', title='訓練日期 Date', sort='ascending'),
+                        y=alt.Y('PainLevel:Q', title='疼痛 VAS', scale=alt.Scale(domain=[0, 10])),
+                        color=alt.Color('BodyArea:N', title='疼痛部位'),
+                        tooltip=[
+                            alt.Tooltip('Date:N', title='日期'),
+                            alt.Tooltip('BodyArea:N', title='部位'),
+                            alt.Tooltip('PainLevel:Q', title='疼痛 VAS')
+                        ]
+                    ).properties(height=340)
+                    st.altair_chart(pain_chart, use_container_width=True)
                 else:
                     st.caption("尚無傷病追蹤數據可繪製趨勢圖 No Injury Data for Line Chart")
 
@@ -2143,19 +2162,39 @@ elif page == "課表紀錄 Training Plan":
                     try: parsed_notes = json.loads(p_notes)
                     except Exception: parsed_notes = None
 
-                    with st.expander(f"日期 Date: {p_date} ｜ 選手 Athlete: {p_user} ｜ 類別: {p_cat} ｜ RPE: {p_intensity}"):
+                    if is_staff:
+                        expander_title = f"日期 Date: {p_date} ｜ 選手 Athlete: {p_user} ｜ 類別: {p_cat} ｜ RPE: {p_intensity}"
+                    else:
+                        expander_title = f"日期 Date: {p_date}"
+
+                    with st.expander(expander_title):
+                        if not is_staff:
+                            st.write(f"• **訓練類別 Category**：`{p_cat}` ｜ **本體感覺 RPE**：`{p_intensity}`")
+
                         if parsed_notes and isinstance(parsed_notes, dict):
                             tot_s = parsed_notes.get('total_sleep_hr', 0)
                             s_h = parsed_notes.get('sleep_hours', int(tot_s))
                             s_m = parsed_notes.get('sleep_mins', int((tot_s - int(tot_s))*60))
                             sleep_str = f"`{s_h}小時 {s_m}分`"
 
+                            bedtime_str = parsed_notes.get('bedtime', '-')
+                            waketime_str = parsed_notes.get('waketime', '-')
+                            restorative_pct = parsed_notes.get('restorative_sleep_pct', None)
+                            restorative_str = f"`{restorative_pct}%`" if restorative_pct is not None else "`-`"
+                            period_str = parsed_notes.get('menstrual_period', '-')
+
                             inj_list = parsed_notes.get("injuries_list", [])
                             st.markdown("**訓練與生理狀態：**")
                             c_d1, c_d2, c_d3 = st.columns(3)
-                            with c_d1: st.write(f"• 訓練時長：`{parsed_notes.get('duration_min', '-')} 分鐘`")
-                            with c_d2: st.write(f"• 疲勞指數：`{parsed_notes.get('fatigue_score', '-')}/10` ｜ 睡眠：{sleep_str}")
-                            with c_d3: st.write(f"• 心率統計：`{parsed_notes.get('resting_hr', '-')} bpm`")
+                            with c_d1:
+                                st.write(f"• 訓練時長：`{parsed_notes.get('duration_min', '-')} 分鐘`")
+                                st.write(f"• 睡覺 / 起床時間：`{bedtime_str}` ～ `{waketime_str}`")
+                            with c_d2:
+                                st.write(f"• 疲勞指數：`{parsed_notes.get('fatigue_score', '-')}/10`")
+                                st.write(f"• 睡眠總時長：{sleep_str} ｜ 恢復性睡眠：{restorative_str}")
+                            with c_d3:
+                                st.write(f"• 靜息心率：`{parsed_notes.get('resting_hr', '-')} bpm`")
+                                st.write(f"• 生理期紀錄：`{period_str}`")
 
                             col_inj_text, col_inj_map = st.columns([1.2, 0.8])
                             with col_inj_text:
@@ -2165,14 +2204,24 @@ elif page == "課表紀錄 Training Plan":
                                         lvl = inj.get("level", 0)
                                         area = inj.get("area", f"痛點 #{inj.get('id',1)}")
                                         ptypes = inj.get("pain_types", [])
-                                        ptypes_str = f" ｜ 性質: {', '.join(ptypes)}" if ptypes else ""
+                                        ptypes_badges = ""
+                                        if ptypes:
+                                            badges_html = " ".join([
+                                                f'<span style="background-color:#dc2626; color:#ffffff; padding:2px 7px; border-radius:4px; font-size:12px; font-weight:600;">{pt}</span>'
+                                                for pt in ptypes
+                                            ])
+                                            ptypes_badges = f" ｜ 性質：{badges_html}"
                                         n_str = inj.get("notes", "")
                                         n_fmt = f" ({n_str})" if n_str else ""
                                         
-                                        if lvl >= 5: st.markdown(f"• :red[**{area}** ｜ 疼痛 VAS: {lvl}/10{ptypes_str}{n_fmt}]")
-                                        elif lvl > 0: st.markdown(f"• :orange[**{area}** ｜ 疼痛 VAS: {lvl}/10 (復原中){ptypes_str}{n_fmt}]")
-                                        else: st.markdown(f"• :green[**{area}** ｜ 疼痛 VAS: 0/10 (痊癒){ptypes_str}{n_fmt}]")
-                                else: st.markdown(":green[良好無傷病 No Active Injury]")
+                                        if lvl >= 5:
+                                            st.markdown(f"• :red[**{area}** ｜ 疼痛 VAS: {lvl}/10]{ptypes_badges}{n_fmt}", unsafe_allow_html=True)
+                                        elif lvl > 0:
+                                            st.markdown(f"• :orange[**{area}** ｜ 疼痛 VAS: {lvl}/10 (復原中)]{ptypes_badges}{n_fmt}", unsafe_allow_html=True)
+                                        else:
+                                            st.markdown(f"• :green[**{area}** ｜ 疼痛 VAS: 0/10 (痊癒)]{ptypes_badges}{n_fmt}", unsafe_allow_html=True)
+                                else:
+                                    st.markdown(":green[良好無傷病 No Active Injury]")
 
                             with col_inj_map:
                                 if "body_map_img_b64" in parsed_notes and parsed_notes["body_map_img_b64"]:
@@ -2229,18 +2278,56 @@ elif page == "課表紀錄 Training Plan":
                             pass
 
                     if not carried_injuries:
-                        carried_injuries = [{"area": "右大腿股四頭肌 Right Quadriceps", "level": 0, "pain_types": [], "notes": ""}]
+                        carried_injuries = [{"area": "右大腿前側(股四頭肌) Right Quadriceps", "level": 0, "pain_types": [], "notes": ""}]
 
                     st.session_state["dyn_injuries"] = carried_injuries
                     st.session_state["dyn_injuries_user"] = target_athlete
 
                 BODY_PART_OPTIONS = [
-                    "頭頸部 Head & Neck", "右肩/三角肌 Right Shoulder Deltoid", "左肩/三角肌 Left Shoulder Deltoid",
-                    "胸大肌 Pectoralis Major", "腹直肌/核心 Rectus Abdominis", "下背/腰椎肌群 Lower Back Lumbar",
-                    "臀大肌 Gluteus Maximus", "右大腿股四頭肌 Right Quadriceps", "左大腿股四頭肌 Left Quadriceps",
-                    "右大腿後側膕繩肌 Right Hamstrings", "左大腿後側膕繩肌 Left Hamstrings", "右膝/髕腱 Right Patellar Tendon",
-                    "左膝/髕腱 Left Patellar Tendon", "右小腿/跟腱 Right Calf & Achilles", "左小腿/跟腱 Left Calf & Achilles",
-                    "右腳踝 Right Ankle", "左腳踝 Left Ankle", "右腳底 Right Plantar/Sole", "左腳底 Left Plantar/Sole"
+                    "頭頸部 Head & Neck",
+                    "右肩內側(前側) Right Medial/Anterior Shoulder",
+                    "右肩外側 Right Lateral Shoulder",
+                    "左肩內側(前側) Left Medial/Anterior Shoulder",
+                    "左肩外側 Left Lateral Shoulder",
+                    "胸大肌 Pectoralis Major",
+                    "腹直肌/核心 Rectus Abdominis",
+                    "下背/腰椎肌群 Lower Back Lumbar",
+                    "右臀肌 Right Gluteus",
+                    "左臀肌 Left Gluteus",
+                    "右髖內側(內收肌群) Right Medial Hip / Adductors",
+                    "右髖外側 Right Lateral Hip",
+                    "左髖內側(內收肌群) Left Medial Hip / Adductors",
+                    "左髖外側 Left Lateral Hip",
+                    "右大腿前側(股四頭肌) Right Quadriceps",
+                    "左大腿前側(股四頭肌) Left Quadriceps",
+                    "右大腿內側 Right Medial Thigh",
+                    "右大腿外側(髂脛束) Right Lateral Thigh / ITB",
+                    "左大腿內側 Left Medial Thigh",
+                    "左大腿外側(髂脛束) Left Lateral Thigh / ITB",
+                    "右大腿後側內側(半腱/半膜肌) Right Medial Hamstrings",
+                    "右大腿後側外側(股二頭肌) Right Lateral Hamstrings",
+                    "左大腿後側內側(半腱/半膜肌) Left Medial Hamstrings",
+                    "左大腿後側外側(股二頭肌) Left Lateral Hamstrings",
+                    "右膝前側(髕腱) Right Anterior Knee",
+                    "右膝內側 Right Medial Knee",
+                    "右膝外側 Right Lateral Knee",
+                    "左膝前側(髕腱) Left Anterior Knee",
+                    "左膝內側 Left Medial Knee",
+                    "左膝外側 Left Lateral Knee",
+                    "右小腿內側 Right Medial Calf",
+                    "右小腿外側 Right Lateral Calf",
+                    "右跟腱 Right Achilles Tendon",
+                    "左小腿內側 Left Medial Calf",
+                    "左小腿外側 Left Lateral Calf",
+                    "左跟腱 Left Achilles Tendon",
+                    "右腳踝內側 Right Medial Ankle",
+                    "右腳踝外側 Right Lateral Ankle",
+                    "左腳踝內側 Left Medial Ankle",
+                    "左腳踝外側 Left Lateral Ankle",
+                    "右腳底內側(足弓) Right Medial Plantar",
+                    "右腳底外側 Right Lateral Plantar",
+                    "左腳底內側(足弓) Left Medial Plantar",
+                    "左腳底外側 Left Lateral Plantar"
                 ]
 
                 PAIN_NATURE_OPTIONS = [
@@ -2248,6 +2335,19 @@ elif page == "課表紀錄 Training Plan":
                     "銳痛/刺痛", "鈍痛/深層隱痛", "關節卡痛/摩擦感", "按壓痛",
                     "腫脹壓迫痛", "灼熱感/發炎痛", "脈動痛/跳痛",
                     "麻木感/麻痛", "放射痛/電擊感"
+                ]
+
+                RPE_OPTIONS = [
+                    "1 非常輕鬆",
+                    "2 很輕鬆",
+                    "3 輕鬆",
+                    "4 稍微吃力",
+                    "5 中等",
+                    "6 稍微艱難",
+                    "7 艱難",
+                    "8 非常艱難",
+                    "9 接近極限",
+                    "10 極限"
                 ]
 
                 captured_body_map_img = st.text_area("body_map_img_b64", key="captured_body_map_img", label_visibility="collapsed")
@@ -2259,21 +2359,31 @@ elif page == "課表紀錄 Training Plan":
                     duration_min = st.number_input("訓練總時長 (分鐘 min)", min_value=10, max_value=300, value=90, step=5, key="log_duration")
                 with c_p2:
                     category = st.selectbox("訓練主題與類別", ["欄架技術 Hurdle Technique", "爆發力/重量 Explosive/Strength", "速耐力/心肺 Speed Endurance", "恢復/伸展 Recovery"], key="log_category")
-                    rpe_feeling = st.select_slider("本體感覺 RPE", options=["1-2 非常輕鬆", "3-4 輕鬆", "5-6 中等", "7-8 艱難", "9-10 極限"], value="5-6 中等", key="log_rpe")
+                    rpe_feeling = st.select_slider("本體感覺 RPE", options=RPE_OPTIONS, value="5 中等", key="log_rpe")
 
                 st.markdown("---")
                 st.markdown("##### 2. 體能與恢復狀態 Recovery Status & Physiology")
-                c_r1, c_r2, c_r3 = st.columns([1, 1.2, 1])
+                c_r1, c_r2, c_r3 = st.columns([1.2, 1, 1])
                 with c_r1:
                     fatigue_score = st.slider("身體疲勞指數 Fatigue (1-10)", 1, 10, 3, key="log_fatigue")
                 with c_r2:
+                    resting_hr = st.number_input("靜息心率 Heart Rate (bpm)", min_value=40, max_value=220, value=65, key="log_hr")
+                with c_r3:
+                    menstrual_period = st.radio("生理期紀錄 Menstrual Period", ["無", "有"], horizontal=True, key="log_menstrual")
+
+                c_s1, c_s2, c_s3, c_s4 = st.columns([1, 1, 1.3, 1.1])
+                with c_s1:
+                    bedtime = st.time_input("睡覺時間 Bedtime", value=datetime.time(23, 0), key="log_bedtime")
+                with c_s2:
+                    waketime = st.time_input("起床時間 Wake-up Time", value=datetime.time(6, 30), key="log_waketime")
+                with c_s3:
                     st.write("**昨夜睡眠總時長 Sleep Duration**")
                     cs_h, cs_m = st.columns(2)
                     with cs_h: sleep_hours = st.number_input("小時 hr", min_value=0, max_value=24, value=7, step=1, key="log_sleep_h")
                     with cs_m: sleep_mins = st.number_input("分鐘 min", min_value=0, max_value=59, value=30, step=5, key="log_sleep_m")
                     total_sleep_hr = sleep_hours + (sleep_mins / 60.0)
-                with c_r3:
-                    resting_hr = st.number_input("靜息心率 Heart Rate (bpm)", min_value=40, max_value=220, value=65, key="log_hr")
+                with c_s4:
+                    restorative_sleep_pct = st.number_input("恢復性睡眠比例 Restorative Sleep (%)", min_value=0, max_value=100, value=45, step=1, key="log_restorative_sleep")
 
                 st.markdown("<br>", unsafe_allow_html=True)
                 st.markdown("###### 傷害追蹤")
@@ -2281,7 +2391,7 @@ elif page == "課表紀錄 Training Plan":
                 injuries_input_data = []
                 to_delete_idx = None
                 for idx, item in enumerate(st.session_state["dyn_injuries"]):
-                    c_sel1, c_sel2, c_sel3, c_sel4 = st.columns([1.5, 1.2, 1.6, 1.2])
+                    c_sel1, c_sel2, c_sel3, c_sel4 = st.columns([1.6, 1.2, 1.6, 1.1])
                     with c_sel1:
                         default_area_idx = BODY_PART_OPTIONS.index(item["area"]) if item["area"] in BODY_PART_OPTIONS else 0
                         selected_area = st.selectbox(f"痛點部位 #{idx+1}", BODY_PART_OPTIONS, index=default_area_idx, key=f"sel_area_{idx}")
@@ -2315,7 +2425,7 @@ elif page == "課表紀錄 Training Plan":
                     st.rerun()
 
                 if st.button("新增身體部位痛點 Add Muscle Region", key="add_more_inj_btn"):
-                    st.session_state["dyn_injuries"].append({"area": "右膝/髕腱 Right Patellar Tendon", "level": 0, "pain_types": [], "notes": ""})
+                    st.session_state["dyn_injuries"].append({"area": "右膝內側 Right Medial Knee", "level": 0, "pain_types": [], "notes": ""})
                     st.rerun()
 
                 st.markdown("---")
@@ -2329,10 +2439,14 @@ elif page == "課表紀錄 Training Plan":
                             "duration_min": duration_min, 
                             "rpe_feeling": rpe_feeling, 
                             "fatigue_score": fatigue_score, 
+                            "bedtime": bedtime.strftime("%H:%M"),
+                            "waketime": waketime.strftime("%H:%M"),
                             "sleep_hours": sleep_hours, 
                             "sleep_mins": sleep_mins,
                             "total_sleep_hr": round(total_sleep_hr, 2), 
+                            "restorative_sleep_pct": restorative_sleep_pct,
                             "resting_hr": resting_hr,
+                            "menstrual_period": menstrual_period,
                             "injuries_list": injuries_input_data,
                             "body_map_img_b64": captured_body_map_img,
                             "user_notes": user_notes
@@ -2358,7 +2472,7 @@ elif page == "課表紀錄 Training Plan":
                         st.warning("請填寫課表細節與組數規劃 Please fill plan details!")
 
                 st.markdown("---")
-                st.markdown("##### 獨立人體圖釘點輔助工具（點擊圖面即可即時同步存檔截圖）")
+                st.markdown("##### 獨立人體圖釘點輔助工具（點擊圖面可新增標記，點擊標記或下方按鈕可移除）")
 
                 body_map_html = """<!DOCTYPE html>
                 <html>
@@ -2366,7 +2480,14 @@ elif page == "課表紀錄 Training Plan":
                 <style>
                     * { box-sizing: border-box; }
                     body { font-family: -apple-system, sans-serif; background: transparent; margin: 0; padding: 0; text-align: center; color: #0f172a; }
-                    .map-outer-container { display: flex; justify-content: center; gap: 24px; background: #ffffff; padding: 16px; border-radius: 12px; border: 1px solid #cbd5e1; flex-wrap: wrap; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+                    .map-wrapper-box { background: #ffffff; padding: 14px 16px 18px 16px; border-radius: 12px; border: 1px solid #cbd5e1; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+                    .map-toolbar { display: flex; justify-content: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
+                    .btn-pin-undo { background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
+                    .btn-pin-undo:hover { background: #e2e8f0; }
+                    .btn-pin-clear { background: #ef4444; color: #ffffff; border: none; padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
+                    .btn-pin-clear:hover { background: #dc2626; }
+                    .pin-count-badge { font-size: 12px; color: #64748b; background: #f8fafc; padding: 5px 10px; border-radius: 6px; border: 1px solid #e2e8f0; }
+                    .map-outer-container { display: flex; justify-content: center; gap: 24px; flex-wrap: wrap; }
                     .body-card { width: 220px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; display: flex; flex-direction: column; align-items: center; }
                     .body-title { font-size: 14px; font-weight: 700; color: #2563eb; margin-bottom: 8px; }
                     .svg-wrapper { position: relative; width: 190px; height: 380px; cursor: crosshair; user-select: none; background: #ffffff; border-radius: 8px; border: 1px solid #cbd5e1; }
@@ -2374,41 +2495,49 @@ elif page == "課表紀錄 Training Plan":
                     .body-shape { fill: #f1f5f9; stroke: #475569; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
                     .body-line { fill: none; stroke: #94a3b8; stroke-width: 1; }
                     .pin-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
-                    .pin-marker { position: absolute; transform: translate(-50%, -50%); width: 20px; height: 20px; border-radius: 50%; background: #ef4444; color: #ffffff; font-size: 11px; font-weight: bold; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.2); pointer-events: auto; }
+                    .pin-marker { position: absolute; transform: translate(-50%, -50%); width: 22px; height: 22px; border-radius: 50%; background: #ef4444; color: #ffffff; font-size: 11px; font-weight: bold; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.25); pointer-events: auto; cursor: pointer; border: 1.5px solid #ffffff; }
+                    .pin-marker:hover { background: #b91c1c; transform: translate(-50%, -50%) scale(1.15); }
                 </style>
                 </head>
                 <body>
-                    <div class="map-outer-container">
-                        <div class="body-card">
-                            <div class="body-title">正面肌肉輪廓 Front</div>
-                            <div class="svg-wrapper" id="wFront">
-                                <svg viewBox="0 0 200 400" id="svgF">
-                                    <circle cx="100" cy="35" r="20" class="body-shape"/>
-                                    <path d="M92,55 L92,65 L108,65 L108,55" class="body-shape"/>
-                                    <path d="M55,75 C70,70 130,70 145,75 L155,120 L140,125 L135,180 L125,230 L75,230 L65,180 L60,125 L45,120 Z" class="body-shape"/>
-                                    <path d="M45,120 L30,180 L40,185 L52,130 Z" class="body-shape"/>
-                                    <path d="M155,120 L170,180 L160,185 L148,130 Z" class="body-shape"/>
-                                    <path d="M75,230 L70,320 L65,380 L85,380 L92,320 L96,230 Z" class="body-shape"/>
-                                    <path d="M125,230 L130,320 L135,380 L115,380 L108,320 L104,230 Z" class="body-shape"/>
-                                    <line x1="100" y1="70" x2="100" y2="230" class="body-line"/>
-                                </svg>
-                                <div class="pin-overlay" id="overlayFront"></div>
-                            </div>
+                    <div class="map-wrapper-box">
+                        <div class="map-toolbar">
+                            <button type="button" class="btn-pin-undo" id="btnUndoPin">↩ 移除上一個釘點</button>
+                            <button type="button" class="btn-pin-clear" id="btnClearPins">🗑️ 清空全部釘點</button>
+                            <span class="pin-count-badge" id="pinCountText">目前標記數：0（點擊標記點可直接移除）</span>
                         </div>
-                        <div class="body-card">
-                            <div class="body-title">背面肌肉輪廓 Back</div>
-                            <div class="svg-wrapper" id="wBack">
-                                <svg viewBox="0 0 200 400" id="svgB">
-                                    <circle cx="100" cy="35" r="20" class="body-shape"/>
-                                    <path d="M92,55 L92,65 L108,65 L108,55" class="body-shape"/>
-                                    <path d="M55,75 C70,70 130,70 145,75 L155,120 L140,125 L135,180 L125,230 L75,230 L65,180 L60,125 L45,120 Z" class="body-shape"/>
-                                    <path d="M45,120 L30,180 L40,185 L52,130 Z" class="body-shape"/>
-                                    <path d="M155,120 L170,180 L160,185 L148,130 Z" class="body-shape"/>
-                                    <path d="M75,230 L70,320 L65,380 L85,380 L92,320 L96,230 Z" class="body-shape"/>
-                                    <path d="M125,230 L130,320 L135,380 L115,380 L108,320 L104,230 Z" class="body-shape"/>
-                                    <line x1="100" y1="70" x2="100" y2="230" class="body-line"/>
-                                </svg>
-                                <div class="pin-overlay" id="overlayBack"></div>
+                        <div class="map-outer-container">
+                            <div class="body-card">
+                                <div class="body-title">正面肌肉輪廓 Front</div>
+                                <div class="svg-wrapper" id="wFront">
+                                    <svg viewBox="0 0 200 400" id="svgF">
+                                        <circle cx="100" cy="35" r="20" class="body-shape"/>
+                                        <path d="M92,55 L92,65 L108,65 L108,55" class="body-shape"/>
+                                        <path d="M55,75 C70,70 130,70 145,75 L155,120 L140,125 L135,180 L125,230 L75,230 L65,180 L60,125 L45,120 Z" class="body-shape"/>
+                                        <path d="M45,120 L30,180 L40,185 L52,130 Z" class="body-shape"/>
+                                        <path d="M155,120 L170,180 L160,185 L148,130 Z" class="body-shape"/>
+                                        <path d="M75,230 L70,320 L65,380 L85,380 L92,320 L96,230 Z" class="body-shape"/>
+                                        <path d="M125,230 L130,320 L135,380 L115,380 L108,320 L104,230 Z" class="body-shape"/>
+                                        <line x1="100" y1="70" x2="100" y2="230" class="body-line"/>
+                                    </svg>
+                                    <div class="pin-overlay" id="overlayFront"></div>
+                                </div>
+                            </div>
+                            <div class="body-card">
+                                <div class="body-title">背面肌肉輪廓 Back</div>
+                                <div class="svg-wrapper" id="wBack">
+                                    <svg viewBox="0 0 200 400" id="svgB">
+                                        <circle cx="100" cy="35" r="20" class="body-shape"/>
+                                        <path d="M92,55 L92,65 L108,65 L108,55" class="body-shape"/>
+                                        <path d="M55,75 C70,70 130,70 145,75 L155,120 L140,125 L135,180 L125,230 L75,230 L65,180 L60,125 L45,120 Z" class="body-shape"/>
+                                        <path d="M45,120 L30,180 L40,185 L52,130 Z" class="body-shape"/>
+                                        <path d="M155,120 L170,180 L160,185 L148,130 Z" class="body-shape"/>
+                                        <path d="M75,230 L70,320 L65,380 L85,380 L92,320 L96,230 Z" class="body-shape"/>
+                                        <path d="M125,230 L130,320 L135,380 L115,380 L108,320 L104,230 Z" class="body-shape"/>
+                                        <line x1="100" y1="70" x2="100" y2="230" class="body-line"/>
+                                    </svg>
+                                    <div class="pin-overlay" id="overlayBack"></div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -2416,6 +2545,7 @@ elif page == "課表紀錄 Training Plan":
                         let mapPins = [];
                         const wf = document.getElementById('wFront'), wb = document.getElementById('wBack');
                         const of = document.getElementById('overlayFront'), ob = document.getElementById('overlayBack');
+                        const pinCountText = document.getElementById('pinCountText');
 
                         function syncToStreamlit(el, val) {
                             if (!el) return;
@@ -2464,6 +2594,17 @@ elif page == "課表紀錄 Training Plan":
                         }
 
                         function generateSnapshot() {
+                            const textAreas = window.parent.document.querySelectorAll('textarea');
+                            let targetMapTA = null;
+                            textAreas.forEach(ta => {
+                                if ((ta.getAttribute('aria-label') || '').includes('body_map_img_b64')) targetMapTA = ta;
+                            });
+
+                            if (mapPins.length === 0) {
+                                if (targetMapTA) syncToStreamlit(targetMapTA, "");
+                                return;
+                            }
+
                             const cvs = document.createElement('canvas');
                             cvs.width = 440; cvs.height = 400;
                             const ctx = cvs.getContext('2d');
@@ -2484,11 +2625,6 @@ elif page == "課表紀錄 Training Plan":
                             });
 
                             const imgB64 = cvs.toDataURL('image/jpeg', 0.85);
-                            const textAreas = window.parent.document.querySelectorAll('textarea');
-                            let targetMapTA = null;
-                            textAreas.forEach(ta => {
-                                if ((ta.getAttribute('aria-label') || '').includes('body_map_img_b64')) targetMapTA = ta;
-                            });
                             if (targetMapTA) syncToStreamlit(targetMapTA, imgB64);
                         }
 
@@ -2496,12 +2632,35 @@ elif page == "課表紀錄 Training Plan":
                             of.innerHTML = ''; ob.innerHTML = '';
                             mapPins.forEach((p, idx) => {
                                 const d = document.createElement('div');
-                                d.className = 'pin-marker'; d.innerText = idx + 1;
-                                d.style.left = p.x + '%'; d.style.top = p.y + '%';
+                                d.className = 'pin-marker';
+                                d.innerText = idx + 1;
+                                d.title = '點擊移除標記 #' + (idx + 1);
+                                d.style.left = p.x + '%';
+                                d.style.top = p.y + '%';
+                                d.addEventListener('click', (ev) => {
+                                    ev.stopPropagation();
+                                    mapPins.splice(idx, 1);
+                                    render();
+                                });
                                 if (p.v === 'f') of.appendChild(d); else ob.appendChild(d);
                             });
+                            pinCountText.innerText = `目前標記數：${mapPins.length}（點擊標記點可直接移除）`;
                             generateSnapshot();
                         }
+
+                        document.getElementById('btnUndoPin').addEventListener('click', () => {
+                            if (mapPins.length > 0) {
+                                mapPins.pop();
+                                render();
+                            }
+                        });
+
+                        document.getElementById('btnClearPins').addEventListener('click', () => {
+                            if (mapPins.length > 0) {
+                                mapPins = [];
+                                render();
+                            }
+                        });
 
                         wf.addEventListener('click', (e) => {
                             const r = wf.getBoundingClientRect();
@@ -2517,7 +2676,7 @@ elif page == "課表紀錄 Training Plan":
                 </body>
                 </html>"""
 
-                components.html(body_map_html, height=450, scrolling=False)
+                components.html(body_map_html, height=500, scrolling=False)
 
             with tab_view_plan:
                 render_training_log_history()
