@@ -832,14 +832,14 @@ if page == "系統首頁 Home":
 
             role_verified = True
             if r_role == "coach":
-                c_code = st.text_input("請輸入教練專用邀請碼 (預設: 09290808)", key="r_ccode")
+                c_code = st.text_input("請輸入教練專用邀請碼 Coach Invitation Code", type="password", key="r_ccode")
                 if c_code == COACH_SECRET_CODE:
                     st.success("教練權限核可！")
                 else:
                     role_verified = False
                     st.warning("請輸入正確的教練邀請碼以驗證教練身分")
             elif r_role == "trainer":
-                t_code = st.text_input("請輸入防護員專用邀請碼 (預設: trainer2026)", key="r_tcode")
+                t_code = st.text_input("請輸入防護員專用邀請碼 Trainer Invitation Code", type="password", key="r_tcode")
                 if t_code == TRAINER_SECRET_CODE:
                     st.success("運動防護員權限核可！")
                 else:
@@ -2803,9 +2803,19 @@ elif page == "課表紀錄 Training Plan":
 
         CATEGORY_OPTIONS = [
             "欄架技術 Hurdle Technique",
-            "爆發力/重量 Explosive/Strength",
-            "速耐力/心肺 Speed Endurance",
-            "恢復/伸展 Recovery"
+            "起跑與上第一欄 Start & First Hurdle",
+            "欄間節奏與步頻 Inter-Hurdle Rhythm & Cadence",
+            "最大速度 / 短衝衝刺 Max Velocity / Sprint",
+            "專項速度耐力 Speed Endurance",
+            "無氧 / 乳酸耐力 Anaerobic / Lactate Tolerance",
+            "爆發力 / 最大肌力重量 Explosive / Max Strength",
+            "增強式訓練 / 彈跳 Plyometrics",
+            "核心與動力鏈穩定 Core & Kinetic Chain Stability",
+            "跨欄柔軟度 / 髖關節活動度 Hurdle Mobility & Flexibility",
+            "敏捷協調 / 敏捷梯訓練 Agility & Coordination",
+            "動態恢復 / 伸展放鬆 Active Recovery & Stretching",
+            "物理治療 / 傷後復健 Rehab & Prehab",
+            "測驗與模擬賽 Time Trial / Competition Simulation"
         ]
 
         def render_training_log_history():
