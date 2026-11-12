@@ -53,7 +53,6 @@ st.markdown("""
     div[data-testid="stTextArea"]:has(textarea[aria-label*="angle_img_b64"]),
     div[data-testid="stTextArea"]:has(textarea[aria-label*="angle_data_json"]),
     div[data-testid="stTextArea"]:has(textarea[aria-label*="timer_data_json"]),
-    div[data-testid="stTextArea"]:has(textarea[aria-label*="ghost_img_b64"]),
     div[data-testid="stTextArea"]:has(textarea[aria-label*="dual_img_b64"]),
     div[data-testid="stTextArea"]:has(textarea[aria-label*="dual_data_json"]) {
         position: absolute !important; left: -9999px !important; top: -9999px !important;
@@ -466,6 +465,7 @@ def get_training_plans(*args, **kwargs):
     c = conn.cursor()
     
     username = kwargs.get("username", None)
+    team_code = kwargs.get("team_code", None)
     if username is None and len(args) > 0:
         if len(args) == 1:
             username = args[0]
@@ -474,9 +474,15 @@ def get_training_plans(*args, **kwargs):
             
     query = "SELECT id, username, plan_date, category, content, intensity, notes, created_at FROM training_plans"
     params = []
+    where_clauses = []
     if username and str(username).strip() and str(username) != "None":
-        query += " WHERE username = %s"
+        where_clauses.append("username = %s")
         params.append(str(username))
+    if team_code and str(team_code).strip() and str(team_code) != "None":
+        where_clauses.append("team_code = %s")
+        params.append(str(team_code))
+    if where_clauses:
+        query += " WHERE " + " AND ".join(where_clauses)
     query += " ORDER BY plan_date ASC, id ASC"
     
     c.execute(query, tuple(params))
@@ -568,7 +574,6 @@ if st.session_state["user_info"] is not None:
 
 st.sidebar.markdown("---")
 
-# 【異动說明】已依需求移除「殘影軌跡 Ghosting Track」選單項目
 nav_options = [
     "系統首頁 Home",
     "運動防護與傷勢評估 Injury & Defense Feedback",
@@ -1242,23 +1247,1409 @@ elif page == "角度分析 Angle Analysis":
                             })
                             st.success("儲存成功！")
 
-       # line 1246
-with tab_hurdle_timer:
-    timer_html_template = """<!DOCTYPE html>
-<html>
-<head>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        * { box-sizing: border-box; }
-        body { font-family: -apple-system, sans-serif; background: transparent; color: #0f172a; margin: 0; padding: 0; }
-        .control-bar { display: flex; gap: 8px; margin-bottom: 12px; background: #ffffff; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; }
-        .btn { background: #2563eb; color: #fff; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; }
-        .btn-secondary { background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; font-weight: bold; }
-        .btn-tb { background: #d97706; color: #fff; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; }
-        .btn-sync { background: #059669; color: #fff; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; }
-    </style>
-</head>
-<body>
-    <!-- 補齊 HTML 內容 -->
-</body>
-</html>"""  # <-- 務必補上結尾的三引號
+        with tab_hurdle_timer:
+            timer_html_template = """<!DOCTYPE html>
+            <html>
+            <head>
+            <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+            <style>
+                * { box-sizing: border-box; }
+                body { font-family: -apple-system, sans-serif; background: transparent; color: #0f172a; margin: 0; padding: 0; }
+                .control-bar { display: flex; gap: 8px; margin-bottom: 12px; background: #ffffff; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; align-items: center; flex-wrap: wrap; }
+                .btn { background: #2563eb; color: #fff; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; }
+                .btn-secondary { background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; }
+                .btn-t0 { background: #d97706; color: #fff; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; }
+                .btn-sync { background: #059669; color: #fff; font-weight: bold; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; width: 100%; margin-top: 4px; }
+                .btn-tap { background: #2563eb; color: #fff; font-size: 15px; padding: 12px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; width: 100%; margin-top: 8px; }
+                .layout { display: flex; flex-direction: column; gap: 16px; width: 100%; }
+                video { width: 100%; border-radius: 6px; background: #000; max-height: 420px; object-fit: contain; }
+                table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
+                th, td { padding: 8px 4px; text-align: center; border-bottom: 1px solid #e2e8f0; }
+                th { color: #2563eb; background: #f8fafc; font-weight: bold; }
+                select { background: #ffffff; color: #0f172a; border: 1px solid #cbd5e1; padding: 5px 8px; border-radius: 6px; font-weight: bold; }
+            </style>
+            </head>
+            <body>
+                <div class="control-bar">
+                    <select id="selGender">
+                        <option value="men">男子 110mH (13.72m / 9.14m)</option>
+                        <option value="women">女子 100mH (13.00m / 8.50m)</option>
+                    </select>
+                    <button id="btnSetT0T" class="btn-t0">設為起點 T0</button>
+                    <button id="btnPlayT" class="btn">播放/暫停</button>
+                    <button id="btnStepBackT" class="btn btn-secondary">上一幀</button>
+                    <button id="btnStepForwardT" class="btn btn-secondary">下一幀</button>
+                    <select id="selSpeedT">
+                        <option value="0.25">0.25x</option>
+                        <option value="0.5">0.5x</option>
+                        <option value="1.0" selected>1.0x</option>
+                    </select>
+                    <button id="btnUndoT" class="btn btn-secondary">撤銷</button>
+                    <button id="btnClearT" class="btn btn-secondary">重置</button>
+                    <button id="btnSyncT" class="btn btn-sync">同步數據 Sync Timing Data</button>
+                </div>
+                <div class="layout">
+                    <div>
+                        <video id="vidT" muted playsinline></video>
+                        <input type="range" id="sliderT" min="0" max="100" value="0" step="0.01" style="width:100%; margin-top:8px;">
+                        <button id="btnTap" class="btn-tap">1. 紀錄起跑與過欄瞬間 (按 Space 或 Enter)</button>
+                    </div>
+                    <div>
+                        <table id="tb">
+                            <thead><tr><th>階段 Phase</th><th>累積時間</th><th>單段耗時</th><th>平均速度</th></tr></thead>
+                            <tbody></tbody>
+                        </table>
+                        <div style="height:220px; margin-top:14px;"><canvas id="chartV"></canvas></div>
+                    </div>
+                </div>
+                <script>
+                    const vidT = document.getElementById('vidT');
+                    const sliderT = document.getElementById('sliderT');
+                    const btnTap = document.getElementById('btnTap');
+                    let taps = [], chartObj = null, t0_h = 0.0;
+
+                    const segLabels = [
+                        "01. 起跑->H1", "02. H1->H2", "03. H2->H3", "04. H3->H4", "05. H4->H5",
+                        "06. H5->H6", "07. H6->H7", "08. H7->H8", "09. H8->H9", "10. H9->H10", "11. H10->終點"
+                    ];
+
+                    function syncToStreamlit(el, val) {
+                        if (!el) return;
+                        try {
+                            const pWin = window.parent;
+                            const nativeSetter = pWin.Object.getOwnPropertyDescriptor(pWin.HTMLTextAreaElement.prototype, "value").set;
+                            nativeSetter.call(el, val);
+                            if (el._valueTracker) el._valueTracker.setValue('');
+                            el.focus(); el.dispatchEvent(new pWin.Event('input', { bubbles: true }));
+                            el.dispatchEvent(new pWin.Event('change', { bubbles: true })); el.blur();
+                        } catch(err) { el.value = val; el.dispatchEvent(new Event('input', { bubbles: true })); }
+                    }
+
+                    function b64ToBlob(b64Data, contentType) {
+                        const byteCharacters = atob(b64Data); const sliceSize = 1024 * 1024; const byteArrays = [];
+                        for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
+                            const slice = byteCharacters.slice(offset, offset + sliceSize);
+                            const byteNumbers = new Array(slice.length);
+                            for (let i = 0; i < slice.length; i++) byteNumbers[i] = slice.charCodeAt(i);
+                            byteArrays.push(new Uint8Array(byteNumbers));
+                        }
+                        return new Blob(byteArrays, {type: contentType});
+                    }
+
+                    try { vidT.src = URL.createObjectURL(b64ToBlob("___B64_SINGLE___", "___MIME_SINGLE___")); } catch(e){}
+                    vidT.addEventListener('loadedmetadata', () => sliderT.max = vidT.duration);
+                    vidT.addEventListener('timeupdate', () => { if (!vidT.paused) sliderT.value = vidT.currentTime; });
+                    sliderT.addEventListener('input', (e) => vidT.currentTime = parseFloat(e.target.value));
+                    document.getElementById('btnPlayT').addEventListener('click', () => { if (vidT.paused) vidT.play(); else vidT.pause(); });
+                    document.getElementById('selSpeedT').addEventListener('change', (e) => vidT.playbackRate = parseFloat(e.target.value));
+
+                    const FRAME_TIME = 1 / 60;
+                    document.getElementById('btnStepBackT').addEventListener('click', () => { vidT.pause(); vidT.currentTime = Math.max(0, vidT.currentTime - FRAME_TIME); });
+                    document.getElementById('btnStepForwardT').addEventListener('click', () => { vidT.pause(); vidT.currentTime = Math.min(vidT.duration, vidT.currentTime + FRAME_TIME); });
+
+                    document.getElementById('btnSetT0T').addEventListener('click', () => {
+                        t0_h = vidT.currentTime;
+                        if (taps.length === 0) taps.push(t0_h); else taps[0] = t0_h;
+                        render();
+                    });
+
+                    const ctxChart = document.getElementById('chartV').getContext('2d');
+                    chartObj = new Chart(ctxChart, {
+                        type: 'bar',
+                        data: { labels: [], datasets: [{ label: 'm/s', data: [], backgroundColor: 'rgba(37,99,235,0.2)', borderColor: '#2563eb', borderWidth: 2 }] },
+                        options: { responsive: true, maintainAspectRatio: false }
+                    });
+
+                    function render() {
+                        const tbody = document.querySelector('#tb tbody');
+                        tbody.innerHTML = '';
+                        const dists = document.getElementById('selGender').value === 'men' ? [13.72, 9.14, 9.14, 9.14, 9.14, 9.14, 9.14, 9.14, 9.14, 9.14, 14.02] : [13.00, 8.50, 8.50, 8.50, 8.50, 8.50, 8.50, 8.50, 8.50, 8.50, 10.50];
+                        let labels = [], vels = [];
+
+                        for (let i = 0; i < taps.length; i++) {
+                            let cum = taps[i] - taps[0];
+                            let lbl = i === 0 ? '起跑 T0' : segLabels[i - 1];
+                            let dtStr = '-', spdStr = '-';
+                            if (i > 0) {
+                                let dt = taps[i] - taps[i-1];
+                                let spd = dt > 0 ? (dists[i-1] / dt) : 0;
+                                dtStr = dt.toFixed(2) + 's'; spdStr = spd.toFixed(2) + ' m/s';
+                                labels.push(lbl); vels.push(spd.toFixed(2));
+                            }
+                            tbody.innerHTML += `<tr><td>${lbl}</td><td>${cum.toFixed(2)}s</td><td>${dtStr}</td><td>${spdStr}</td></tr>`;
+                        }
+                        chartObj.data.labels = labels; chartObj.data.datasets[0].data = vels; chartObj.update();
+                    }
+
+                    function recordTap() { if (taps.length < 12) { taps.push(vidT.currentTime); render(); } }
+                    btnTap.addEventListener('click', recordTap);
+                    document.getElementById('btnUndoT').addEventListener('click', () => { taps.pop(); render(); });
+                    document.getElementById('btnClearT').addEventListener('click', () => { taps = []; render(); });
+                    document.addEventListener('keydown', (e) => { if (e.code==='Space'||e.code==='Enter') { e.preventDefault(); recordTap(); } });
+
+                    document.getElementById('btnSyncT').addEventListener('click', () => {
+                        const dists = document.getElementById('selGender').value === 'men' ? [13.72, 9.14, 9.14, 9.14, 9.14, 9.14, 9.14, 9.14, 9.14, 9.14, 14.02] : [13.00, 8.50, 8.50, 8.50, 8.50, 8.50, 8.50, 8.50, 8.50, 8.50, 10.50];
+                        let splits = [];
+                        for (let i = 1; i < taps.length; i++) {
+                            let dt = taps[i] - taps[i-1];
+                            let spd = dt > 0 ? (dists[i-1] / dt) : 0;
+                            splits.push({ segment: segLabels[i-1], cum_sec: (taps[i]-taps[0]).toFixed(2), split_sec: dt.toFixed(2), speed_ms: spd.toFixed(2) });
+                        }
+                        const textAreas = window.parent.document.querySelectorAll('textarea');
+                        let targetTimerTA = null;
+                        textAreas.forEach(ta => { if ((ta.getAttribute('aria-label') || '').includes('timer_data_json')) targetTimerTA = ta; });
+                        if (targetTimerTA) { syncToStreamlit(targetTimerTA, JSON.stringify({ total_time: (taps[taps.length-1]-taps[0]).toFixed(2), splits: splits })); alert("數據已成功同步！"); }
+                    });
+                </script>
+            </body>
+            </html>"""
+
+            timer_html_code = timer_html_template.replace("___MIME_SINGLE___", mime_single).replace("___B64_SINGLE___", b64_single)
+            components.html(timer_html_code, height=980, scrolling=True)
+
+            st.markdown("---")
+            captured_timer_json = st.text_area("timer_data_json", key="captured_timer_json", label_visibility="collapsed")
+            if captured_timer_json:
+                try:
+                    tm_data = json.loads(captured_timer_json)
+                    st.success(f"打點數據接收成功！總累積耗時：`{tm_data.get('total_time')} 秒`")
+                    if st.session_state["user_info"]:
+                        with st.form("save_timer_form"):
+                            rec_title_timer = st.text_input("紀錄名稱", value=f"欄間秒數及速度計算 {uploaded_file.name}")
+                            if st.form_submit_button("儲存至團隊資料庫"):
+                                u = st.session_state["user_info"]
+                                save_record(u["username"], u["team_code"], "欄間秒數及速度計算 Hurdle Time & Speed Calculation", rec_title_timer, {"timer_metrics": tm_data, "saved_at": str(datetime.datetime.now())})
+                                st.success("儲存成功！")
+                except Exception: pass
+
+# ==================== 【頁面 5：雙影同步 Dual Video Sync】 ====================
+elif page == "雙影同步 Dual Video Sync":
+    st.title("🎬 雙影同步與關鍵影格角度分析 Dual Video Sync & Angle Analysis")
+    st.markdown("---")
+
+    col_f1, col_f2 = st.columns(2)
+    with col_f1:
+        file_a = st.file_uploader("上傳影片 A (如：左側 / 舊紀錄)", type=["mp4", "mov", "avi"], key="dual_v_a")
+    with col_f2:
+        file_b = st.file_uploader("上傳影片 B (如：右側 / 新紀錄)", type=["mp4", "mov", "avi"], key="dual_v_b")
+
+    if file_a and file_b:
+        with st.spinner("正在進行手機影片自動轉碼與雙影解碼 (H.264 MP4)..."):
+            bytes_a, mime_a = process_and_convert_video(file_a)
+            bytes_b, mime_b = process_and_convert_video(file_b)
+            b64_a = base64.b64encode(bytes_a).decode("utf-8")
+            b64_b = base64.b64encode(bytes_b).decode("utf-8")
+
+        tab_sync_play, tab_dual_angle = st.tabs([
+            "📹 雙影對齊與相對同步播放",
+            "📐 雙影畫面擷取與角度分析"
+        ])
+
+        with tab_sync_play:
+            dual_play_html_template = """<!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    * { box-sizing: border-box; }
+                    body { font-family: -apple-system, sans-serif; background: transparent; color: #0f172a; margin: 0; padding: 0; }
+                    .main-slider-box { background: #ffffff; border: 2px solid #2563eb; padding: 12px 16px; border-radius: 10px; margin-bottom: 14px; box-shadow: 0 2px 4px rgba(37,99,235,0.1); }
+                    .top-bar { display: flex; gap: 8px; margin-bottom: 12px; background: #ffffff; padding: 10px 14px; border-radius: 8px; border: 1px solid #e2e8f0; align-items: center; justify-content: center; flex-wrap: wrap; }
+                    .btn-align-play { background: #059669; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; }
+                    .btn-align-jump { background: #d97706; color: #fff; border: none; padding: 8px 14px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; }
+                    .btn-sync { background: #2563eb; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; }
+                    .btn-reset { background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; padding: 8px 14px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; }
+                    .layout { display: flex; gap: 14px; width: 100%; }
+                    .vid-card { flex: 1; background: #ffffff; border-radius: 10px; border: 1px solid #e2e8f0; padding: 12px; }
+                    video { width: 100%; border-radius: 6px; max-height: 360px; object-fit: contain; background: #000; display: block; }
+                    .ctrl-row { display: flex; gap: 6px; margin-top: 8px; align-items: center; flex-wrap: wrap; }
+                    .btn-sm { background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; padding: 5px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; }
+                    .btn-set-align { background: #2563eb; color: #fff; border: none; padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; }
+                    select { background: #ffffff; color: #0f172a; border: 1px solid #cbd5e1; padding: 4px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+                    input[type=range] { width: 100%; height: 6px; border-radius: 3px; background: #cbd5e1; outline: none; cursor: pointer; }
+                </style>
+            </head>
+            <body>
+                <div class="main-slider-box">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:6px; font-size:13px;">
+                        <span style="color:#2563eb; font-weight:bold;">🔗 雙影片相對對齊同步控制滑桿 (Master Sync Slider)</span>
+                        <span>相對對齊時間: <b id="txtMasterTime" style="color:#059669; font-size:15px;">0.00s</b></span>
+                    </div>
+                    <input type="range" id="sliderMaster" min="0" max="100" value="0" step="0.01">
+                </div>
+
+                <div class="top-bar">
+                    <button class="btn-align-play" onclick="playFromAlign()">▶ 從對齊點同步播放</button>
+                    <button class="btn-align-jump" onclick="jumpToAlign()">🎯 跳至各自對齊點</button>
+                    <button class="btn-sync" onclick="togglePlayBoth()">⏯ 同步播放 / 暫停</button>
+                    <button class="btn-reset" onclick="resetTimes()">↺ 時間歸零</button>
+                </div>
+                
+                <div class="layout">
+                    <div class="vid-card">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <h5 style="margin:0; color:#2563eb; font-size:14px;">影片 A</h5>
+                            <span style="font-size:12px; color:#64748b;">時間: <b id="txtTimeA" style="color:#2563eb; font-size:13px;">0.00s</b></span>
+                        </div>
+                        <video id="vidA" muted playsinline controls></video>
+                        <input type="range" id="sliderA" min="0" max="100" value="0" step="0.01" style="margin-top:6px;">
+                        <div class="ctrl-row">
+                            <button class="btn-set-align" onclick="setAlignA()">📌 設為 A 對齊點</button>
+                            <button class="btn-sm" onclick="stepA(-0.033)">-1幀</button>
+                            <button class="btn-sm" onclick="stepA(0.033)">+1幀</button>
+                            <span style="font-size:11px; color:#64748b; margin-left:auto;">速度:</span>
+                            <select id="selSpeedA" onchange="vidA.playbackRate = parseFloat(this.value)">
+                                <option value="0.25">0.25x</option>
+                                <option value="0.5">0.5x</option>
+                                <option value="0.75">0.75x</option>
+                                <option value="1.0" selected>1.0x</option>
+                            </select>
+                        </div>
+                        <div id="txtAlignA" style="margin-top:8px; font-size:12px; color:#059669; font-weight:bold;">📍 影片 A 對齊點：未設定 (0.00s)</div>
+                    </div>
+
+                    <div class="vid-card">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <h5 style="margin:0; color:#d97706; font-size:14px;">影片 B</h5>
+                            <span style="font-size:12px; color:#64748b;">時間: <b id="txtTimeB" style="color:#d97706; font-size:13px;">0.00s</b></span>
+                        </div>
+                        <video id="vidB" muted playsinline controls></video>
+                        <input type="range" id="sliderB" min="0" max="100" value="0" step="0.01" style="margin-top:6px;">
+                        <div class="ctrl-row">
+                            <button class="btn-set-align" style="background:#d97706;" onclick="setAlignB()">📌 設為 B 對齊點</button>
+                            <button class="btn-sm" onclick="stepB(-0.033)">-1幀</button>
+                            <button class="btn-sm" onclick="stepB(0.033)">+1幀</button>
+                            <span style="font-size:11px; color:#64748b; margin-left:auto;">速度:</span>
+                            <select id="selSpeedB" onchange="vidB.playbackRate = parseFloat(this.value)">
+                                <option value="0.25">0.25x</option>
+                                <option value="0.5">0.5x</option>
+                                <option value="0.75">0.75x</option>
+                                <option value="1.0" selected>1.0x</option>
+                            </select>
+                        </div>
+                        <div id="txtAlignB" style="margin-top:8px; font-size:12px; color:#059669; font-weight:bold;">📍 影片 B 對齊點：未設定 (0.00s)</div>
+                    </div>
+                </div>
+
+                <script>
+                    const vidA = document.getElementById('vidA'), vidB = document.getElementById('vidB');
+                    const sliderA = document.getElementById('sliderA'), sliderB = document.getElementById('sliderB');
+                    const sliderMaster = document.getElementById('sliderMaster');
+                    const txtMasterTime = document.getElementById('txtMasterTime');
+                    const txtTimeA = document.getElementById('txtTimeA'), txtTimeB = document.getElementById('txtTimeB');
+                    const txtAlignA = document.getElementById('txtAlignA'), txtAlignB = document.getElementById('txtAlignB');
+
+                    let alignTimeA = 0, alignTimeB = 0;
+
+                    function b64ToBlob(b64Data, contentType) {
+                        const byteCharacters = atob(b64Data);
+                        const sliceSize = 1024 * 1024; const byteArrays = [];
+                        for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
+                            const slice = byteCharacters.slice(offset, offset + sliceSize);
+                            const byteNumbers = new Array(slice.length);
+                            for (let i = 0; i < slice.length; i++) byteNumbers[i] = slice.charCodeAt(i);
+                            byteArrays.push(new Uint8Array(byteNumbers));
+                        }
+                        return new Blob(byteArrays, {type: contentType});
+                    }
+
+                    try {
+                        vidA.src = URL.createObjectURL(b64ToBlob("___B64_A___", "___MIME_A___"));
+                        vidB.src = URL.createObjectURL(b64ToBlob("___B64_B___", "___MIME_B___"));
+                    } catch(e) { console.error(e); }
+
+                    function updateMasterSliderMax() {
+                        const durA = (vidA.duration || 0) - alignTimeA;
+                        const durB = (vidB.duration || 0) - alignTimeB;
+                        const maxSyncDur = Math.max(0, Math.max(durA, durB));
+                        sliderMaster.max = maxSyncDur > 0 ? maxSyncDur : 100;
+                    }
+
+                    vidA.addEventListener('loadedmetadata', () => { sliderA.max = vidA.duration; updateMasterSliderMax(); });
+                    vidB.addEventListener('loadedmetadata', () => { sliderB.max = vidB.duration; updateMasterSliderMax(); });
+
+                    vidA.addEventListener('timeupdate', () => {
+                        txtTimeA.innerText = vidA.currentTime.toFixed(2) + 's';
+                        if (!vidA.paused) {
+                            sliderA.value = vidA.currentTime;
+                            const relT = Math.max(0, vidA.currentTime - alignTimeA);
+                            sliderMaster.value = relT;
+                            txtMasterTime.innerText = relT.toFixed(2) + 's';
+                        }
+                    });
+
+                    vidB.addEventListener('timeupdate', () => {
+                        txtTimeB.innerText = vidB.currentTime.toFixed(2) + 's';
+                        if (!vidB.paused) sliderB.value = vidB.currentTime;
+                    });
+
+                    sliderA.addEventListener('input', function() { vidA.currentTime = parseFloat(this.value); });
+                    sliderB.addEventListener('input', function() { vidB.currentTime = parseFloat(this.value); });
+
+                    sliderMaster.addEventListener('input', function() {
+                        const relOffset = parseFloat(this.value);
+                        txtMasterTime.innerText = relOffset.toFixed(2) + 's';
+                        vidA.currentTime = Math.min(vidA.duration, Math.max(0, alignTimeA + relOffset));
+                        vidB.currentTime = Math.min(vidB.duration, Math.max(0, alignTimeB + relOffset));
+                        sliderA.value = vidA.currentTime;
+                        sliderB.value = vidB.currentTime;
+                    });
+
+                    function setAlignA() {
+                        alignTimeA = vidA.currentTime;
+                        txtAlignA.innerText = `📍 影片 A 對齊點：${alignTimeA.toFixed(2)}s`;
+                        updateMasterSliderMax();
+                    }
+
+                    function setAlignB() {
+                        alignTimeB = vidB.currentTime;
+                        txtAlignB.innerText = `📍 影片 B 對齊點：${alignTimeB.toFixed(2)}s`;
+                        updateMasterSliderMax();
+                    }
+
+                    function stepA(val) { vidA.pause(); vidA.currentTime = Math.max(0, Math.min(vidA.duration, vidA.currentTime + val)); sliderA.value = vidA.currentTime; }
+                    function stepB(val) { vidB.pause(); vidB.currentTime = Math.max(0, Math.min(vidB.duration, vidB.currentTime + val)); sliderB.value = vidB.currentTime; }
+
+                    function playFromAlign() {
+                        vidA.pause(); vidB.pause();
+                        vidA.currentTime = alignTimeA;
+                        vidB.currentTime = alignTimeB;
+                        sliderMaster.value = 0;
+                        txtMasterTime.innerText = '0.00s';
+                        vidA.play(); vidB.play();
+                    }
+
+                    function jumpToAlign() {
+                        vidA.pause(); vidB.pause();
+                        vidA.currentTime = alignTimeA;
+                        vidB.currentTime = alignTimeB;
+                        sliderMaster.value = 0;
+                        txtMasterTime.innerText = '0.00s';
+                    }
+
+                    function togglePlayBoth() {
+                        if (vidA.paused || vidB.paused) { vidA.play(); vidB.play(); }
+                        else { vidA.pause(); vidB.pause(); }
+                    }
+
+                    function resetTimes() {
+                        vidA.pause(); vidB.pause();
+                        vidA.currentTime = 0; vidB.currentTime = 0;
+                        sliderMaster.value = 0;
+                        txtMasterTime.innerText = '0.00s';
+                    }
+                </script>
+            </body>
+            </html>"""
+
+            dual_play_html_code = (
+                dual_play_html_template
+                .replace("___B64_A___", b64_a).replace("___MIME_A___", mime_a)
+                .replace("___B64_B___", b64_b).replace("___MIME_B___", mime_b)
+            )
+            components.html(dual_play_html_code, height=580, scrolling=False)
+
+        with tab_dual_angle:
+            st.info("💡 **操作指南**：在兩部影片播放器中各自暫停於關鍵動作點，點擊「📷 擷取畫面至畫布」，接著用滑鼠在畫布上連續點擊 3 點標記關節角度，最後點擊「🚀 合成兩圖與角度數據」。")
+            
+            dual_angle_html_template = """<!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    * { box-sizing: border-box; }
+                    body { font-family: -apple-system, sans-serif; background: transparent; color: #0f172a; margin: 0; padding: 0; }
+                    .angle-container { display: flex; gap: 14px; width: 100%; }
+                    .card { flex: 1; background: #ffffff; padding: 12px; border-radius: 10px; border: 1px solid #e2e8f0; text-align: center; }
+                    video { width: 100%; max-height: 240px; background: #000; border-radius: 6px; object-fit: contain; }
+                    canvas { width: 100%; background: #0f172a; border-radius: 6px; cursor: crosshair; margin-top: 8px; }
+                    .btn-group { display: flex; gap: 6px; justify-content: center; margin-top: 6px; flex-wrap: wrap; }
+                    button { padding: 6px 12px; border-radius: 4px; border: none; cursor: pointer; font-weight: bold; font-size: 12px; }
+                    .btn-cap { background: #2563eb; color: white; }
+                    .btn-clr { background: #ef4444; color: white; }
+                    .btn-sm { background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; }
+                    .btn-upload { background: #059669; color: white; font-size: 14px; padding: 10px 24px; margin-top: 14px; border-radius: 6px; cursor: pointer; border: none; font-weight: bold; }
+                    .angle-info { background: #f8fafc; padding: 6px; border-radius: 4px; font-size: 12px; margin-top: 6px; color: #2563eb; font-weight: bold; border: 1px solid #cbd5e1; }
+                </style>
+            </head>
+            <body>
+                <div class="angle-container">
+                    <div class="card">
+                        <div style="font-weight:bold; font-size:13px; color:#2563eb; margin-bottom:4px;">影片 A 關鍵畫面</div>
+                        <video id="vSrcA" controls playsinline></video>
+                        <div class="btn-group">
+                            <button class="btn-sm" onclick="stepSrc('A', -0.033)">-1幀</button>
+                            <button class="btn-sm" onclick="stepSrc('A', 0.033)">+1幀</button>
+                            <button class="btn-cap" onclick="capFrame('A')">📷 擷取當前畫面至畫布 A</button>
+                            <button class="btn-clr" onclick="clearPts('A')">↺ 重置 A 角度</button>
+                        </div>
+                        <canvas id="canA" width="480" height="320"></canvas>
+                        <div class="angle-info" id="infoA">角度：尚未量測 (請先擷取畫面並點擊 3 點)</div>
+                    </div>
+
+                    <div class="card">
+                        <div style="font-weight:bold; font-size:13px; color:#d97706; margin-bottom:4px;">影片 B 關鍵畫面</div>
+                        <video id="vSrcB" controls playsinline></video>
+                        <div class="btn-group">
+                            <button class="btn-sm" onclick="stepSrc('B', -0.033)">-1幀</button>
+                            <button class="btn-sm" onclick="stepSrc('B', 0.033)">+1幀</button>
+                            <button class="btn-cap" style="background:#d97706;" onclick="capFrame('B')">📷 擷取當前畫面至畫布 B</button>
+                            <button class="btn-clr" onclick="clearPts('B')">↺ 重置 B 角度</button>
+                        </div>
+                        <canvas id="canB" width="480" height="320"></canvas>
+                        <div class="angle-info" id="infoB">角度：尚未量測 (請先擷取畫面並點擊 3 點)</div>
+                    </div>
+                </div>
+
+                <div style="text-align:center;">
+                    <button class="btn-upload" onclick="mergeAndUpload()">🚀 合成兩圖與角度數據並傳送至系統</button>
+                </div>
+
+                <script>
+                    const vSrcA = document.getElementById('vSrcA'), vSrcB = document.getElementById('vSrcB');
+                    const canA = document.getElementById('canA'), ctxA = canA.getContext('2d');
+                    const canB = document.getElementById('canB'), ctxB = canB.getContext('2d');
+
+                    let ptsA = [], ptsB = [];
+                    let angleA = null, angleB = null;
+                    let imgDataA = null, imgDataB = null;
+
+                    function b64ToBlob(b64Data, contentType) {
+                        const byteCharacters = atob(b64Data);
+                        const sliceSize = 1024 * 1024; const byteArrays = [];
+                        for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
+                            const slice = byteCharacters.slice(offset, offset + sliceSize);
+                            const byteNumbers = new Array(slice.length);
+                            for (let i = 0; i < slice.length; i++) byteNumbers[i] = slice.charCodeAt(i);
+                            byteArrays.push(new Uint8Array(byteNumbers));
+                        }
+                        return new Blob(byteArrays, {type: contentType});
+                    }
+
+                    try {
+                        vSrcA.src = URL.createObjectURL(b64ToBlob("___B64_A___", "___MIME_A___"));
+                        vSrcB.src = URL.createObjectURL(b64ToBlob("___B64_B___", "___MIME_B___"));
+                    } catch(e) { console.error(e); }
+
+                    function stepSrc(tag, val) {
+                        const v = (tag === 'A') ? vSrcA : vSrcB;
+                        v.pause(); v.currentTime = Math.max(0, Math.min(v.duration, v.currentTime + val));
+                    }
+
+                    function capFrame(tag) {
+                        const v = (tag === 'A') ? vSrcA : vSrcB;
+                        const c = (tag === 'A') ? canA : canB;
+                        const ctx = (tag === 'A') ? ctxA : ctxB;
+                        
+                        ctx.fillStyle = '#0f172a';
+                        ctx.fillRect(0, 0, c.width, c.height);
+                        
+                        if (v.videoWidth && v.videoHeight) {
+                            const vAspect = v.videoWidth / v.videoHeight;
+                            const cAspect = c.width / c.height;
+                            let drawW = c.width, drawH = c.height, startX = 0, startY = 0;
+                            if (vAspect > cAspect) {
+                                drawH = c.width / vAspect;
+                                startY = (c.height - drawH) / 2;
+                            } else {
+                                drawW = c.height * vAspect;
+                                startX = (c.width - drawW) / 2;
+                            }
+                            ctx.drawImage(v, startX, startY, drawW, drawH);
+                        } else {
+                            ctx.drawImage(v, 0, 0, c.width, c.height);
+                        }
+
+                        if (tag === 'A') {
+                            imgDataA = ctx.getImageData(0, 0, c.width, c.height);
+                            ptsA = []; angleA = null;
+                            document.getElementById('infoA').innerText = '已擷取畫面，請在畫布上連續點擊 3 點標記關節';
+                        } else {
+                            imgDataB = ctx.getImageData(0, 0, c.width, c.height);
+                            ptsB = []; angleB = null;
+                            document.getElementById('infoB').innerText = '已擷取畫面，請在畫布上連續點擊 3 點標記關節';
+                        }
+                    }
+
+                    function clearPts(tag) {
+                        const ctx = (tag === 'A') ? ctxA : ctxB;
+                        const img = (tag === 'A') ? imgDataA : imgDataB;
+                        if (img) ctx.putImageData(img, 0, 0);
+                        if (tag === 'A') { ptsA = []; angleA = null; document.getElementById('infoA').innerText = '角度：尚未量測'; }
+                        else { ptsB = []; angleB = null; document.getElementById('infoB').innerText = '角度：尚未量測'; }
+                    }
+
+                    function addClickEvent(can, tag) {
+                        can.addEventListener('click', function(e) {
+                            const rect = can.getBoundingClientRect();
+                            const x = (e.clientX - rect.left) * (can.width / rect.width);
+                            const y = (e.clientY - rect.top) * (can.height / rect.height);
+                            const pts = (tag === 'A') ? ptsA : ptsB;
+
+                            if (pts.length < 3) {
+                                pts.push({x, y});
+                                drawPts(tag);
+                            }
+                        });
+                    }
+                    addClickEvent(canA, 'A');
+                    addClickEvent(canB, 'B');
+
+                    function drawPts(tag) {
+                        const c = (tag === 'A') ? canA : canB;
+                        const ctx = (tag === 'A') ? ctxA : ctxB;
+                        const img = (tag === 'A') ? imgDataA : imgDataB;
+                        const pts = (tag === 'A') ? ptsA : ptsB;
+
+                        if (img) ctx.putImageData(img, 0, 0);
+
+                        ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 3; ctx.fillStyle = '#f59e0b';
+                        for(let i=0; i<pts.length; i++) {
+                            ctx.beginPath(); ctx.arc(pts[i].x, pts[i].y, 5, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+                        }
+
+                        if (pts.length === 2) {
+                            ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y); ctx.lineTo(pts[1].x, pts[1].y); ctx.stroke();
+                        } else if (pts.length === 3) {
+                            ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y); ctx.lineTo(pts[1].x, pts[1].y); ctx.lineTo(pts[2].x, pts[2].y); ctx.stroke();
+
+                            const rad1 = Math.atan2(pts[0].y - pts[1].y, pts[0].x - pts[1].x);
+                            const rad2 = Math.atan2(pts[2].y - pts[1].y, pts[2].x - pts[1].x);
+                            let deg = Math.abs((rad1 - rad2) * (180 / Math.PI));
+                            if (deg > 180) deg = 360 - deg;
+                            deg = Math.round(deg * 10) / 10;
+
+                            if (tag === 'A') angleA = deg; else angleB = deg;
+
+                            ctx.fillStyle = '#38bdf8'; ctx.font = 'bold 16px sans-serif';
+                            ctx.fillText(deg + '°', pts[1].x + 10, pts[1].y - 10);
+                            document.getElementById((tag==='A')?'infoA':'infoB').innerText = '關節夾角量測結果：' + deg + '°';
+                        }
+                    }
+
+                    function syncVal(el, val) {
+                        if (!el) return;
+                        const pWin = window.parent;
+                        try {
+                            const nativeSetter = pWin.Object.getOwnPropertyDescriptor(pWin.HTMLTextAreaElement.prototype, "value").set;
+                            nativeSetter.call(el, val);
+                            if (el._valueTracker) el._valueTracker.setValue('');
+                            el.focus();
+                            el.dispatchEvent(new pWin.Event('input', { bubbles: true }));
+                            el.dispatchEvent(new pWin.Event('change', { bubbles: true }));
+                            el.blur();
+                        } catch(err) {
+                            el.value = val;
+                            el.dispatchEvent(new Event('input', { bubbles: true }));
+                            el.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+                    }
+
+                    function mergeAndUpload() {
+                        const outCan = document.createElement('canvas');
+                        outCan.width = 960; outCan.height = 360;
+                        const oCtx = outCan.getContext('2d');
+                        oCtx.fillStyle = '#0f172a'; oCtx.fillRect(0,0,960,360);
+
+                        oCtx.drawImage(canA, 0, 20, 470, 320);
+                        oCtx.drawImage(canB, 490, 20, 470, 320);
+
+                        oCtx.fillStyle = '#ffffff'; oCtx.font = 'bold 14px sans-serif';
+                        oCtx.fillText('影片 A (時間: ' + vSrcA.currentTime.toFixed(2) + 's, 角度: ' + (angleA ? angleA + '°' : '未量測') + ')', 10, 15);
+                        oCtx.fillText('影片 B (時間: ' + vSrcB.currentTime.toFixed(2) + 's, 角度: ' + (angleB ? angleB + '°' : '未量測') + ')', 500, 15);
+
+                        const mergedB64 = outCan.toDataURL('image/png');
+                        const jsonPayload = JSON.stringify({
+                            time_A: vSrcA.currentTime.toFixed(2),
+                            time_B: vSrcB.currentTime.toFixed(2),
+                            angle_A: angleA,
+                            angle_B: angleB,
+                            timestamp: new Date().toISOString()
+                        });
+
+                        const textAreas = window.parent.document.querySelectorAll('textarea');
+                        let targetImgBox = null, targetJsonBox = null;
+                        textAreas.forEach(ta => {
+                            const label = ta.getAttribute('aria-label') || '';
+                            if (label.includes('dual_img_b64')) targetImgBox = ta;
+                            if (label.includes('dual_data_json')) targetJsonBox = ta;
+                        });
+
+                        if (!targetImgBox && textAreas.length >= 2) targetImgBox = textAreas[0];
+                        if (!targetJsonBox && textAreas.length >= 2) targetJsonBox = textAreas[1];
+
+                        if (targetImgBox && targetJsonBox) {
+                            syncVal(targetImgBox, mergedB64);
+                            syncVal(targetJsonBox, jsonPayload);
+                            alert("雙影對比畫面與角度數據已成功傳送至系統！");
+                        } else {
+                            alert("已擷取數據，請於下方預覽區確認！");
+                        }
+                    }
+                </script>
+            </body>
+            </html>"""
+
+            dual_angle_html_code = (
+                dual_angle_html_template
+                .replace("___B64_A___", b64_a).replace("___MIME_A___", mime_a)
+                .replace("___B64_B___", b64_b).replace("___MIME_B___", mime_b)
+            )
+            components.html(dual_angle_html_code, height=760, scrolling=False)
+
+        st.markdown("---")
+        captured_dual_img = st.text_area("dual_img_b64", key="captured_dual_img", label_visibility="collapsed")
+        captured_dual_json = st.text_area("dual_data_json", key="captured_dual_json", label_visibility="collapsed")
+
+        if captured_dual_img and captured_dual_json:
+            st.success("📸 已成功擷取並合成雙影角度分析畫面！")
+            st.image(captured_dual_img, caption="雙影對比與角度量測合成圖", use_container_width=True)
+
+            if st.session_state["user_info"]:
+                with st.form("save_dual_angle_form"):
+                    rec_title_dual = st.text_input("紀錄名稱", value=f"雙影角度對比 {file_a.name} vs {file_b.name}")
+                    if st.form_submit_button("💾 儲存至團隊數據庫", use_container_width=True):
+                        u = st.session_state["user_info"]
+                        try:
+                            parsed_metrics = json.loads(captured_dual_json)
+                        except Exception:
+                            parsed_metrics = {"raw_json": captured_dual_json}
+
+                        save_record(
+                            u["username"],
+                            "雙影同步 Dual Video Sync",
+                            rec_title_dual,
+                            {
+                                "image_b64": captured_dual_img, 
+                                "angle_metrics": parsed_metrics, 
+                                "saved_at": str(datetime.datetime.now())
+                            }
+                        )
+                        st.success("成功儲存至團隊歷史數據庫！")
+                        st.rerun()
+
+# ==================== 【頁面 6：跨期數據對比】 ====================
+elif page == "跨期數據對比 Longitudinal Comparison":
+    st.title("跨期數據對比分析 Longitudinal Comparison Analysis")
+    st.markdown("---")
+
+    if st.session_state["user_info"] is None:
+        st.warning("請先登入帳號")
+    else:
+        u = st.session_state["user_info"]
+        team_code = u["team_code"]
+        role = u["role"]
+
+        if role in ["coach", "trainer"]:
+            team_athletes = get_team_athletes(team_code)
+            target_user = st.selectbox("請選擇選手 Select Athlete：", team_athletes) if team_athletes else None
+        else:
+            target_user = u["username"]
+
+        if target_user:
+            mod_choice = st.radio("請選擇對比項目：", ["欄間秒數及速度計算 Hurdle Time & Speed Calculation", "關鍵影格角度量測 Keyframe Angle Measurement"])
+            records = get_user_records(team_code, username=target_user, module=mod_choice)
+
+            if not records:
+                st.warning(f"選手 {target_user} 在團隊中尚無 {mod_choice} 的歷史紀錄。")
+            else:
+                title_counts = {}
+                rec_options = {}
+                for r in records:
+                    t = r[3]
+                    if t in title_counts:
+                        title_counts[t] += 1
+                        disp_key = f"{t} ({title_counts[t]})"
+                    else:
+                        title_counts[t] = 1
+                        disp_key = t
+                    rec_options[disp_key] = r
+
+                selected_keys = st.multiselect("請選擇 2 至 5 筆紀錄進行對照：", list(rec_options.keys()))
+
+                if len(selected_keys) >= 2:
+                    st.markdown("---")
+                    st.subheader("多日數據對比明細")
+
+                    if mod_choice == "欄間秒數及速度計算 Hurdle Time & Speed Calculation":
+                        chart_metric = st.radio(
+                            "選擇折線圖展示指標：", 
+                            ["分段平均速度 (m/s)", "單段耗時 (秒 s)"], 
+                            horizontal=True
+                        )
+
+                        ORDERED_SEGMENTS = [
+                            "起跑->H1", "H1->H2", "H2->H3", "H3->H4", "H4->H5",
+                            "H5->H6", "H6->H7", "H7->H8", "H8->H9", "H9->H10", "H10->終點"
+                        ]
+
+                        plot_dict = {}
+                        table_data = {}
+                        for k in selected_keys:
+                            rec = rec_options[k]
+                            tm = json.loads(rec[4]).get("timer_metrics", {})
+                            splits = tm.get("splits", [])
+                            rec_label = k
+
+                            for idx, s in enumerate(splits):
+                                if idx < len(ORDERED_SEGMENTS):
+                                    seg = ORDERED_SEGMENTS[idx]
+                                else:
+                                    seg = s.get("segment", f"段落{idx+1}")
+
+                                try: split_sec = float(s.get("split_sec", "0"))
+                                except ValueError: split_sec = 0.0
+
+                                try: speed_ms = float(s.get("speed_ms", "0"))
+                                except ValueError: speed_ms = 0.0
+
+                                if seg not in plot_dict: plot_dict[seg] = {}
+                                if seg not in table_data: table_data[seg] = {}
+
+                                if "分段平均速度" in chart_metric:
+                                    plot_dict[seg][rec_label] = round(speed_ms, 2)
+                                else:
+                                    plot_dict[seg][rec_label] = round(split_sec, 3)
+
+                                table_data[seg][rec_label] = f"速度 {speed_ms:.2f} m/s ｜ 單段 {s.get('split_sec')}s ｜ 累積 {s.get('cum_sec')}s"
+
+                        unit_label = "m/s" if "分段平均速度" in chart_metric else "s"
+                        st.markdown(f"##### 跨期分段速度與耗時變化趨勢圖 (單位：{unit_label})")
+                        if plot_dict:
+                            df_plot = pd.DataFrame.from_dict(plot_dict, orient='index')
+                            
+                            existing_indices = df_plot.index.tolist()
+                            sorted_index = [seg for seg in ORDERED_SEGMENTS if seg in existing_indices] + [seg for seg in existing_indices if seg not in ORDERED_SEGMENTS]
+                            df_plot = df_plot.reindex(sorted_index)
+
+                            df_alt = df_plot.reset_index().rename(columns={'index': 'Segment'})
+                            df_melt = df_alt.melt(id_vars=['Segment'], var_name='紀錄 Title', value_name=f'數值 ({unit_label})')
+
+                            chart = alt.Chart(df_melt).mark_line(point=True).encode(
+                                x=alt.X('Segment:N', sort=ORDERED_SEGMENTS, title="比賽分段 Segment"),
+                                y=alt.Y(f'數值 ({unit_label}):Q', title=f"數值 ({unit_label})"),
+                                color='紀錄 Title:N',
+                                tooltip=['Segment', '紀錄 Title', f'數值 ({unit_label})']
+                            ).properties(height=420)
+
+                            st.altair_chart(chart, use_container_width=True)
+
+                        st.markdown("##### 各段落耗時與平均速度對照表")
+                        if table_data:
+                            df_table = pd.DataFrame.from_dict(table_data, orient='index')
+                            existing_table_indices = df_table.index.tolist()
+                            sorted_table_index = [seg for seg in ORDERED_SEGMENTS if seg in existing_table_indices] + [seg for seg in existing_table_indices if seg not in ORDERED_SEGMENTS]
+                            df_table = df_table.reindex(sorted_table_index)
+                            st.dataframe(df_table, use_container_width=True)
+
+                    elif mod_choice == "關鍵影格角度量測 Keyframe Angle Measurement":
+                        plot_dict_angle = {}
+                        for k in selected_keys:
+                            rec = rec_options[k]
+                            am = json.loads(rec[4]).get("angle_metrics", {})
+                            rec_label = k
+                            angles = am.get("angles", []) if isinstance(am, dict) else am
+                            if isinstance(angles, list):
+                                for a in angles:
+                                    name = a.get("name", "未知名稱")
+                                    val_str = str(a.get("value", "0")).replace("°", "").strip()
+                                    try: val = float(val_str)
+                                    except ValueError: val = 0.0
+                                    if rec_label not in plot_dict_angle: plot_dict_angle[rec_label] = {}
+                                    plot_dict_angle[rec_label][name] = val
+
+                        st.markdown("##### 跨期角度變化趨勢折線圖 Angle Progression Line Chart")
+                        if plot_dict_angle:
+                            st.line_chart(pd.DataFrame.from_dict(plot_dict_angle, orient='index'))
+
+                        st.markdown("##### 跨期畫面與角度數據明細 Comparison Cards")
+                        col_arr = st.columns(len(selected_keys))
+                        for idx, k in enumerate(selected_keys):
+                            rec = rec_options[k]
+                            details = json.loads(rec[4])
+                            with col_arr[idx]:
+                                st.markdown(f"**紀錄標題：{rec[3]}**")
+                                if "image_b64" in details:
+                                    st.image(details["image_b64"], use_container_width=True)
+                                am = details.get("angle_metrics", {})
+                                angles = am.get("angles", []) if isinstance(am, dict) else am
+                                st.write(f"時間：`{am.get('rel_time_sec', '0.00')} 秒`")
+                                st.write(f"階段：`{am.get('phase_tag', '關鍵點')}`")
+                                if isinstance(angles, list):
+                                    for a in angles:
+                                        st.write(f"• {a.get('name')}：`{a.get('value')}`")
+
+# ==================== 【頁面 7：課表紀錄】 ====================
+elif page == "課表紀錄 Training Plan":
+    st.title("課表與訓練日誌紀錄 Training Plan & Daily Log")
+    st.markdown("---")
+
+    if st.session_state["user_info"] is None:
+        st.warning("請先在左側邊欄登入帳號 Please Login in Sidebar First")
+    else:
+        user = st.session_state["user_info"]
+        role = user["role"]
+        is_staff = (role in ["coach", "trainer"])
+
+        def render_training_log_history():
+            st.subheader("團隊訓練課表與日誌歷史檔案 Team Training Log Archive" if is_staff else "訓練課表與日誌歷史檔案 Training Log Archive")
+            if is_staff:
+                team_athletes = get_team_athletes(user["team_code"])
+                filter_user = st.selectbox("篩選選手 Filter Athlete", ["全隊所有人 Entire Team"] + team_athletes)
+                query_user = None if filter_user == "全隊所有人 Entire Team" else filter_user
+                try:
+                    plans = get_training_plans(username=query_user, team_code=user["team_code"])
+                except Exception:
+                    plans = []
+            else:
+                query_user = user["username"]
+                try:
+                    plans = get_training_plans(query_user)
+                except Exception:
+                    try:
+                        plans = get_training_plans(username=query_user)
+                    except Exception:
+                        plans = []
+
+            if not plans:
+                st.warning("尚無訓練日誌紀錄 No Training Log Records")
+            else:
+                st.markdown("##### 部位疼痛指數復原趨勢圖 Pain Score Recovery Trend")
+
+                pain_rows = []
+                for p in plans:
+                    p_date = p[2]
+                    try:
+                        parsed = json.loads(p[6])
+                        inj_list = parsed.get("injuries_list", [])
+                        for inj in inj_list:
+                            area = inj.get("area", f"部位 #{inj.get('id',1)}")
+                            lvl = inj.get("level", 0)
+                            pain_rows.append({"Date": p_date, "BodyArea": area, "PainLevel": int(lvl)})
+                    except Exception:
+                        continue
+
+                if pain_rows:
+                    df_pain_raw = pd.DataFrame(pain_rows)
+                    df_pivot = df_pain_raw.pivot_table(index='Date', columns='BodyArea', values='PainLevel', aggfunc='last').fillna(0)
+                    df_pivot = df_pivot.sort_index()
+                    st.line_chart(df_pivot)
+                else:
+                    st.caption("尚無傷病追蹤數據可繪製趨勢圖 No Injury Data for Line Chart")
+
+                st.markdown("---")
+                
+                for p in reversed(plans):
+                    p_id, p_user, p_date, p_cat, p_content, p_intensity, p_notes, p_created = p
+                    parsed_notes = None
+                    try: parsed_notes = json.loads(p_notes)
+                    except Exception: parsed_notes = None
+
+                    with st.expander(f"日期 Date: {p_date} ｜ 選手 Athlete: {p_user} ｜ 類別: {p_cat} ｜ RPE: {p_intensity}"):
+                        if parsed_notes and isinstance(parsed_notes, dict):
+                            tot_s = parsed_notes.get('total_sleep_hr', 0)
+                            s_h = parsed_notes.get('sleep_hours', int(tot_s))
+                            s_m = parsed_notes.get('sleep_mins', int((tot_s - int(tot_s))*60))
+                            sleep_str = f"`{s_h}小時 {s_m}分`"
+
+                            inj_list = parsed_notes.get("injuries_list", [])
+                            st.markdown("**訓練與生理狀態：**")
+                            c_d1, c_d2, c_d3 = st.columns(3)
+                            with c_d1: st.write(f"• 訓練時長：`{parsed_notes.get('duration_min', '-')} 分鐘`")
+                            with c_d2: st.write(f"• 疲勞指數：`{parsed_notes.get('fatigue_score', '-')}/10` ｜ 睡眠：{sleep_str}")
+                            with c_d3: st.write(f"• 心率統計：`{parsed_notes.get('resting_hr', '-')} bpm`")
+
+                            col_inj_text, col_inj_map = st.columns([1.2, 0.8])
+                            with col_inj_text:
+                                st.markdown("**痛點部位與疼痛性質紀錄 Injury Details：**")
+                                if inj_list:
+                                    for inj in inj_list:
+                                        lvl = inj.get("level", 0)
+                                        area = inj.get("area", f"痛點 #{inj.get('id',1)}")
+                                        ptypes = inj.get("pain_types", [])
+                                        ptypes_str = f" ｜ 性質: {', '.join(ptypes)}" if ptypes else ""
+                                        n_str = inj.get("notes", "")
+                                        n_fmt = f" ({n_str})" if n_str else ""
+                                        
+                                        if lvl >= 5: st.markdown(f"• :red[**{area}** ｜ 疼痛 VAS: {lvl}/10{ptypes_str}{n_fmt}]")
+                                        elif lvl > 0: st.markdown(f"• :orange[**{area}** ｜ 疼痛 VAS: {lvl}/10 (復原中){ptypes_str}{n_fmt}]")
+                                        else: st.markdown(f"• :green[**{area}** ｜ 疼痛 VAS: 0/10 (痊癒){ptypes_str}{n_fmt}]")
+                                else: st.markdown(":green[良好無傷病 No Active Injury]")
+
+                            with col_inj_map:
+                                if "body_map_img_b64" in parsed_notes and parsed_notes["body_map_img_b64"]:
+                                    st.image(parsed_notes["body_map_img_b64"], caption="當時人體標記圖 Body Map Snapshot", use_container_width=True)
+
+                            st.markdown(f"**課表細節：**\n```text\n{p_content}\n```")
+                            u_notes = parsed_notes.get("user_notes", "")
+                            if u_notes:
+                                st.markdown(f"**動作感覺與教練叮嚀：**\n```text\n{u_notes}\n```")
+                        else:
+                            st.markdown(f"**課表細節 Details：**\n```text\n{p_content}\n```")
+                        
+                        if is_staff or p_user == user["username"]:
+                            if st.button(f"刪除日誌 Log ID {p_id}", key=f"del_plan_{p_id}"):
+                                delete_training_plan(p_id)
+                                st.rerun()
+
+        if is_staff:
+            render_training_log_history()
+        else:
+            tab_new_plan, tab_view_plan = st.tabs([
+                "新增與編輯訓練日誌 Add & Edit Training Log",
+                "歷次課表與日誌總覽 Training Log History"
+            ])
+
+            with tab_new_plan:
+                st.subheader("填寫訓練日誌內容 Fill Training Log Details")
+                target_athlete = user["username"]
+
+                if "dyn_injuries_user" not in st.session_state or st.session_state["dyn_injuries_user"] != target_athlete:
+                    try:
+                        prev_plans = get_training_plans(target_athlete)
+                    except Exception:
+                        try:
+                            prev_plans = get_training_plans(username=target_athlete)
+                        except Exception:
+                            prev_plans = []
+
+                    carried_injuries = []
+                    if prev_plans:
+                        last_plan = prev_plans[-1]
+                        try:
+                            parsed_last = json.loads(last_plan[6])
+                            last_inj_list = parsed_last.get("injuries_list", [])
+                            for inj in last_inj_list:
+                                if inj.get("area"):
+                                    carried_injuries.append({
+                                        "area": inj.get("area"),
+                                        "level": inj.get("level", 0),
+                                        "pain_types": inj.get("pain_types", []),
+                                        "notes": inj.get("notes", "")
+                                    })
+                        except Exception:
+                            pass
+
+                    if not carried_injuries:
+                        carried_injuries = [{"area": "右大腿股四頭肌 Right Quadriceps", "level": 0, "pain_types": [], "notes": ""}]
+
+                    st.session_state["dyn_injuries"] = carried_injuries
+                    st.session_state["dyn_injuries_user"] = target_athlete
+
+                BODY_PART_OPTIONS = [
+                    "頭頸部 Head & Neck", "右肩/三角肌 Right Shoulder Deltoid", "左肩/三角肌 Left Shoulder Deltoid",
+                    "胸大肌 Pectoralis Major", "腹直肌/核心 Rectus Abdominis", "下背/腰椎肌群 Lower Back Lumbar",
+                    "臀大肌 Gluteus Maximus", "右大腿股四頭肌 Right Quadriceps", "左大腿股四頭肌 Left Quadriceps",
+                    "右大腿後側膕繩肌 Right Hamstrings", "左大腿後側膕繩肌 Left Hamstrings", "右膝/髕腱 Right Patellar Tendon",
+                    "左膝/髕腱 Left Patellar Tendon", "右小腿/跟腱 Right Calf & Achilles", "左小腿/跟腱 Left Calf & Achilles",
+                    "右腳踝 Right Ankle", "左腳踝 Left Ankle", "右腳底 Right Plantar/Sole", "左腳底 Left Plantar/Sole"
+                ]
+
+                PAIN_NATURE_OPTIONS = [
+                    "延遲性酸痛 (DOMS)", "肌肉緊繃/僵硬", "拉扯痛/牽扯感", "撕裂痛",
+                    "銳痛/刺痛", "鈍痛/深層隱痛", "關節卡痛/摩擦感", "按壓痛",
+                    "腫脹壓迫痛", "灼熱感/發炎痛", "脈動痛/跳痛",
+                    "麻木感/麻痛", "放射痛/電擊感"
+                ]
+
+                captured_body_map_img = st.text_area("body_map_img_b64", key="captured_body_map_img", label_visibility="collapsed")
+
+                st.markdown("##### 1. 基本訓練設定 Basic Plan Info")
+                c_p1, c_p2 = st.columns(2)
+                with c_p1:
+                    plan_date = st.date_input("訓練日期 Training Date", value=datetime.date.today(), key="log_plan_date")
+                    duration_min = st.number_input("訓練總時長 (分鐘 min)", min_value=10, max_value=300, value=90, step=5, key="log_duration")
+                with c_p2:
+                    category = st.selectbox("訓練主題與類別", ["欄架技術 Hurdle Technique", "爆發力/重量 Explosive/Strength", "速耐力/心肺 Speed Endurance", "恢復/伸展 Recovery"], key="log_category")
+                    rpe_feeling = st.select_slider("本體感覺 RPE", options=["1-2 非常輕鬆", "3-4 輕鬆", "5-6 中等", "7-8 艱難", "9-10 極限"], value="5-6 中等", key="log_rpe")
+
+                st.markdown("---")
+                st.markdown("##### 2. 體能與恢復狀態 Recovery Status & Physiology")
+                c_r1, c_r2, c_r3 = st.columns([1, 1.2, 1])
+                with c_r1:
+                    fatigue_score = st.slider("身體疲勞指數 Fatigue (1-10)", 1, 10, 3, key="log_fatigue")
+                with c_r2:
+                    st.write("**昨夜睡眠總時長 Sleep Duration**")
+                    cs_h, cs_m = st.columns(2)
+                    with cs_h: sleep_hours = st.number_input("小時 hr", min_value=0, max_value=24, value=7, step=1, key="log_sleep_h")
+                    with cs_m: sleep_mins = st.number_input("分鐘 min", min_value=0, max_value=59, value=30, step=5, key="log_sleep_m")
+                    total_sleep_hr = sleep_hours + (sleep_mins / 60.0)
+                with c_r3:
+                    resting_hr = st.number_input("靜息心率 Heart Rate (bpm)", min_value=40, max_value=220, value=65, key="log_hr")
+
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.markdown("###### 傷害追蹤")
+
+                injuries_input_data = []
+                to_delete_idx = None
+                for idx, item in enumerate(st.session_state["dyn_injuries"]):
+                    c_sel1, c_sel2, c_sel3, c_sel4 = st.columns([1.5, 1.2, 1.6, 1.2])
+                    with c_sel1:
+                        default_area_idx = BODY_PART_OPTIONS.index(item["area"]) if item["area"] in BODY_PART_OPTIONS else 0
+                        selected_area = st.selectbox(f"痛點部位 #{idx+1}", BODY_PART_OPTIONS, index=default_area_idx, key=f"sel_area_{idx}")
+                    with c_sel2:
+                        selected_lvl = st.slider(f"疼痛等級 (VAS 0-10)", 0, 10, item["level"], key=f"sel_lvl_{idx}")
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        if st.button("刪除此痛點", key=f"del_inj_{idx}"):
+                            to_delete_idx = idx
+                    with c_sel3:
+                        default_pts = item.get("pain_types", [])
+                        if not isinstance(default_pts, list): default_pts = []
+                        selected_pain_types = st.multiselect(
+                            f"疼痛性質 (可多選)", 
+                            options=PAIN_NATURE_OPTIONS, 
+                            default=[p for p in default_pts if p in PAIN_NATURE_OPTIONS],
+                            key=f"sel_ptypes_{idx}"
+                        )
+                    with c_sel4:
+                        selected_note = st.text_input(f"備註說明", value=item.get("notes", ""), key=f"sel_note_{idx}")
+
+                    injuries_input_data.append({
+                        "id": idx + 1,
+                        "area": selected_area,
+                        "level": selected_lvl,
+                        "pain_types": selected_pain_types,
+                        "notes": selected_note
+                    })
+
+                if to_delete_idx is not None:
+                    st.session_state["dyn_injuries"].pop(to_delete_idx)
+                    st.rerun()
+
+                if st.button("新增身體部位痛點 Add Muscle Region", key="add_more_inj_btn"):
+                    st.session_state["dyn_injuries"].append({"area": "右膝/髕腱 Right Patellar Tendon", "level": 0, "pain_types": [], "notes": ""})
+                    st.rerun()
+
+                st.markdown("---")
+                st.markdown("##### 3. 課表內容與自主備註 Plan Details & Notes")
+                content = st.text_area("課表細節與組數規劃 Plan Details & Sets", height=120, key="log_content")
+                user_notes = st.text_area("動作感覺與教練叮嚀 Notes & Feedback", height=80, key="log_user_notes")
+
+                if st.button("儲存訓練日誌 Save Training Log", key="btn_save_training_log", use_container_width=True):
+                    if content.strip():
+                        extra_log_info = {
+                            "duration_min": duration_min, 
+                            "rpe_feeling": rpe_feeling, 
+                            "fatigue_score": fatigue_score, 
+                            "sleep_hours": sleep_hours, 
+                            "sleep_mins": sleep_mins,
+                            "total_sleep_hr": round(total_sleep_hr, 2), 
+                            "resting_hr": resting_hr,
+                            "injuries_list": injuries_input_data,
+                            "body_map_img_b64": captured_body_map_img,
+                            "user_notes": user_notes
+                        }
+                        save_training_plan(
+                            target_athlete,
+                            user["team_code"],
+                            str(plan_date),
+                            category,
+                            content,
+                            rpe_feeling,
+                            json.dumps(extra_log_info, ensure_ascii=False)
+                        )
+                        
+                        if "dyn_injuries_user" in st.session_state:
+                            del st.session_state["dyn_injuries_user"]
+                        if "dyn_injuries" in st.session_state:
+                            del st.session_state["dyn_injuries"]
+
+                        st.success(f"成功儲存 {plan_date} 的訓練與精準傷病日誌！")
+                        st.rerun()
+                    else:
+                        st.warning("請填寫課表細節與組數規劃 Please fill plan details!")
+
+                st.markdown("---")
+                st.markdown("##### 獨立人體圖釘點輔助工具（點擊圖面即可即時同步存檔截圖）")
+
+                body_map_html = """<!DOCTYPE html>
+                <html>
+                <head>
+                <style>
+                    * { box-sizing: border-box; }
+                    body { font-family: -apple-system, sans-serif; background: transparent; margin: 0; padding: 0; text-align: center; color: #0f172a; }
+                    .map-outer-container { display: flex; justify-content: center; gap: 24px; background: #ffffff; padding: 16px; border-radius: 12px; border: 1px solid #cbd5e1; flex-wrap: wrap; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+                    .body-card { width: 220px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; display: flex; flex-direction: column; align-items: center; }
+                    .body-title { font-size: 14px; font-weight: 700; color: #2563eb; margin-bottom: 8px; }
+                    .svg-wrapper { position: relative; width: 190px; height: 380px; cursor: crosshair; user-select: none; background: #ffffff; border-radius: 8px; border: 1px solid #cbd5e1; }
+                    .svg-wrapper svg { width: 100%; height: 100%; display: block; }
+                    .body-shape { fill: #f1f5f9; stroke: #475569; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+                    .body-line { fill: none; stroke: #94a3b8; stroke-width: 1; }
+                    .pin-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+                    .pin-marker { position: absolute; transform: translate(-50%, -50%); width: 20px; height: 20px; border-radius: 50%; background: #ef4444; color: #ffffff; font-size: 11px; font-weight: bold; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.2); pointer-events: auto; }
+                </style>
+                </head>
+                <body>
+                    <div class="map-outer-container">
+                        <div class="body-card">
+                            <div class="body-title">正面肌肉輪廓 Front</div>
+                            <div class="svg-wrapper" id="wFront">
+                                <svg viewBox="0 0 200 400" id="svgF">
+                                    <circle cx="100" cy="35" r="20" class="body-shape"/>
+                                    <path d="M92,55 L92,65 L108,65 L108,55" class="body-shape"/>
+                                    <path d="M55,75 C70,70 130,70 145,75 L155,120 L140,125 L135,180 L125,230 L75,230 L65,180 L60,125 L45,120 Z" class="body-shape"/>
+                                    <path d="M45,120 L30,180 L40,185 L52,130 Z" class="body-shape"/>
+                                    <path d="M155,120 L170,180 L160,185 L148,130 Z" class="body-shape"/>
+                                    <path d="M75,230 L70,320 L65,380 L85,380 L92,320 L96,230 Z" class="body-shape"/>
+                                    <path d="M125,230 L130,320 L135,380 L115,380 L108,320 L104,230 Z" class="body-shape"/>
+                                    <line x1="100" y1="70" x2="100" y2="230" class="body-line"/>
+                                </svg>
+                                <div class="pin-overlay" id="overlayFront"></div>
+                            </div>
+                        </div>
+                        <div class="body-card">
+                            <div class="body-title">背面肌肉輪廓 Back</div>
+                            <div class="svg-wrapper" id="wBack">
+                                <svg viewBox="0 0 200 400" id="svgB">
+                                    <circle cx="100" cy="35" r="20" class="body-shape"/>
+                                    <path d="M92,55 L92,65 L108,65 L108,55" class="body-shape"/>
+                                    <path d="M55,75 C70,70 130,70 145,75 L155,120 L140,125 L135,180 L125,230 L75,230 L65,180 L60,125 L45,120 Z" class="body-shape"/>
+                                    <path d="M45,120 L30,180 L40,185 L52,130 Z" class="body-shape"/>
+                                    <path d="M155,120 L170,180 L160,185 L148,130 Z" class="body-shape"/>
+                                    <path d="M75,230 L70,320 L65,380 L85,380 L92,320 L96,230 Z" class="body-shape"/>
+                                    <path d="M125,230 L130,320 L135,380 L115,380 L108,320 L104,230 Z" class="body-shape"/>
+                                    <line x1="100" y1="70" x2="100" y2="230" class="body-line"/>
+                                </svg>
+                                <div class="pin-overlay" id="overlayBack"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <script>
+                        let mapPins = [];
+                        const wf = document.getElementById('wFront'), wb = document.getElementById('wBack');
+                        const of = document.getElementById('overlayFront'), ob = document.getElementById('overlayBack');
+
+                        function syncToStreamlit(el, val) {
+                            if (!el) return;
+                            try {
+                                const pWin = window.parent;
+                                const nativeSetter = pWin.Object.getOwnPropertyDescriptor(pWin.HTMLTextAreaElement.prototype, "value").set;
+                                nativeSetter.call(el, val);
+                                if (el._valueTracker) el._valueTracker.setValue('');
+                                el.focus();
+                                el.dispatchEvent(new pWin.Event('input', { bubbles: true }));
+                                el.dispatchEvent(new pWin.Event('change', { bubbles: true }));
+                                el.blur();
+                            } catch(err) {
+                                el.value = val;
+                                el.dispatchEvent(new Event('input', { bubbles: true }));
+                                el.dispatchEvent(new Event('change', { bubbles: true }));
+                            }
+                        }
+
+                        function drawBodySilhouette(ctx, ox, oy) {
+                            ctx.save();
+                            ctx.translate(ox, oy);
+
+                            ctx.fillStyle = "#f1f5f9";
+                            ctx.strokeStyle = "#475569";
+                            ctx.lineWidth = 1.5;
+
+                            ctx.beginPath(); ctx.arc(100, 35, 20, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+                            ctx.beginPath(); ctx.moveTo(92, 55); ctx.lineTo(92, 65); ctx.lineTo(108, 65); ctx.lineTo(108, 55); ctx.closePath(); ctx.fill(); ctx.stroke();
+                            ctx.beginPath();
+                            ctx.moveTo(55, 75); ctx.bezierCurveTo(70, 70, 130, 70, 145, 75);
+                            ctx.lineTo(155, 120); ctx.lineTo(140, 125); ctx.lineTo(135, 180);
+                            ctx.lineTo(125, 230); ctx.lineTo(75, 230); ctx.lineTo(65, 180);
+                            ctx.lineTo(60, 125); ctx.lineTo(45, 120);
+                            ctx.closePath(); ctx.fill(); ctx.stroke();
+
+                            ctx.beginPath(); ctx.moveTo(45, 120); ctx.lineTo(30, 180); ctx.lineTo(40, 185); ctx.lineTo(52, 130); ctx.closePath(); ctx.fill(); ctx.stroke();
+                            ctx.beginPath(); ctx.moveTo(155, 120); ctx.lineTo(170, 180); ctx.lineTo(160, 185); ctx.lineTo(148, 130); ctx.closePath(); ctx.fill(); ctx.stroke();
+                            ctx.beginPath(); ctx.moveTo(75, 230); ctx.lineTo(70, 320); ctx.lineTo(65, 380); ctx.lineTo(85, 380); ctx.lineTo(92, 320); ctx.lineTo(96, 230); ctx.closePath(); ctx.fill(); ctx.stroke();
+                            ctx.beginPath(); ctx.moveTo(125, 230); ctx.lineTo(130, 320); ctx.lineTo(135, 380); ctx.lineTo(115, 380); ctx.lineTo(108, 320); ctx.lineTo(104, 230); ctx.closePath(); ctx.fill(); ctx.stroke();
+
+                            ctx.strokeStyle = "#94a3b8"; ctx.lineWidth = 1;
+                            ctx.beginPath(); ctx.moveTo(100, 70); ctx.lineTo(100, 230); ctx.stroke();
+
+                            ctx.restore();
+                        }
+
+                        function generateSnapshot() {
+                            const cvs = document.createElement('canvas');
+                            cvs.width = 440; cvs.height = 400;
+                            const ctx = cvs.getContext('2d');
+                            ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, 440, 400);
+
+                            ctx.fillStyle = "#2563eb"; ctx.font = "bold 14px sans-serif"; ctx.textAlign = "left";
+                            ctx.fillText("正面 Front", 70, 20); ctx.fillText("背面 Back", 290, 20);
+
+                            drawBodySilhouette(ctx, 10, 0);
+                            drawBodySilhouette(ctx, 230, 0);
+
+                            mapPins.forEach((p, idx) => {
+                                let px = p.v === 'f' ? (10 + (p.x / 100) * 200) : (230 + (p.x / 100) * 200);
+                                let py = (p.y / 100) * 400;
+                                ctx.fillStyle = "#ef4444"; ctx.beginPath(); ctx.arc(px, py, 10, 0, Math.PI * 2); ctx.fill();
+                                ctx.fillStyle = "#ffffff"; ctx.font = "bold 11px sans-serif"; ctx.textAlign = "center";
+                                ctx.fillText(idx + 1, px, py + 4);
+                            });
+
+                            const imgB64 = cvs.toDataURL('image/jpeg', 0.85);
+                            const textAreas = window.parent.document.querySelectorAll('textarea');
+                            let targetMapTA = null;
+                            textAreas.forEach(ta => {
+                                if ((ta.getAttribute('aria-label') || '').includes('body_map_img_b64')) targetMapTA = ta;
+                            });
+                            if (targetMapTA) syncToStreamlit(targetMapTA, imgB64);
+                        }
+
+                        function render() {
+                            of.innerHTML = ''; ob.innerHTML = '';
+                            mapPins.forEach((p, idx) => {
+                                const d = document.createElement('div');
+                                d.className = 'pin-marker'; d.innerText = idx + 1;
+                                d.style.left = p.x + '%'; d.style.top = p.y + '%';
+                                if (p.v === 'f') of.appendChild(d); else ob.appendChild(d);
+                            });
+                            generateSnapshot();
+                        }
+
+                        wf.addEventListener('click', (e) => {
+                            const r = wf.getBoundingClientRect();
+                            mapPins.push({ v: 'f', x: ((e.clientX - r.left)/r.width*100).toFixed(1), y: ((e.clientY - r.top)/r.height*100).toFixed(1) });
+                            render();
+                        });
+                        wb.addEventListener('click', (e) => {
+                            const r = wb.getBoundingClientRect();
+                            mapPins.push({ v: 'b', x: ((e.clientX - r.left)/r.width*100).toFixed(1), y: ((e.clientY - r.top)/r.height*100).toFixed(1) });
+                            render();
+                        });
+                    </script>
+                </body>
+                </html>"""
+
+                components.html(body_map_html, height=450, scrolling=False)
+
+            with tab_view_plan:
+                render_training_log_history()
+
+# ==================== 【頁面 8：歷史分析紀錄】 ====================
+elif page == "歷史分析紀錄 History Records":
+    st.title("歷史分析紀錄庫 History Records Repository")
+    st.markdown("---")
+
+    if st.session_state["user_info"] is None:
+        st.warning("請先在左側邊欄登入帳號 Please Login in Sidebar First")
+    else:
+        user = st.session_state["user_info"]
+        is_coach = (user["role"] == "coach")
+
+        records = get_user_records(username=None if is_coach else user["username"])
+
+        if not records:
+            st.warning("尚無任何分析紀錄 No History Records Found")
+        else:
+            grouped_records = {}
+            for rec in records:
+                date_str = rec[5].split(" ")[0] if " " in rec[5] else rec[5]
+                if date_str not in grouped_records: grouped_records[date_str] = []
+                grouped_records[date_str].append(rec)
+
+            for date_key in sorted(grouped_records.keys(), reverse=True):
+                day_recs = grouped_records[date_key]
+                with st.expander(f"📅 日期 Date：{date_key} （共 {len(day_recs)} 筆紀錄）"):
+                    for rec in day_recs:
+                        rec_id, rec_user, rec_module, rec_title, rec_details_str, rec_time = rec
+                        try:
+                            rec_details = json.loads(rec_details_str) if isinstance(rec_details_str, str) else rec_details_str
+                        except Exception:
+                            rec_details = {}
+
+                        st.markdown(f"#### [{rec_module}] {rec_title}")
+
+                        col_d1, col_d2 = st.columns([1, 1])
+
+                        with col_d1:
+                            if isinstance(rec_details, dict) and rec_details.get("image_b64"):
+                                st.image(rec_details["image_b64"], caption="畫面截圖 Composite Image", use_container_width=True)
+
+                            st.markdown("##### 📝 動作分析筆記與教練叮嚀 Analysis Notes")
+                            current_notes = rec_details.get("notes", "") if isinstance(rec_details, dict) else ""
+                            
+                            note_input = st.text_area(
+                                "輸入或修改本筆紀錄的檢討與建議 Notes & Comments",
+                                value=current_notes,
+                                height=110,
+                                key=f"note_input_{rec_id}"
+                            )
+                            
+                            col_b1, col_b2 = st.columns([1, 1])
+                            with col_b1:
+                                if st.button("💾 儲存筆記 Save Note", key=f"save_note_btn_{rec_id}", use_container_width=True):
+                                    if isinstance(rec_details, dict):
+                                        rec_details["notes"] = note_input
+                                        update_record_details(rec_id, rec_details)
+                                        st.success("筆記已成功更新至資料庫！")
+                                        st.rerun()
+
+                            if is_coach or rec_user == user["username"]:
+                                with col_b2:
+                                    if st.button(f"🗑️ 刪除紀錄 ID {rec_id}", key=f"del_btn_{rec_id}", use_container_width=True):
+                                        delete_record(rec_id)
+                                        st.rerun()
+
+                        with col_d2:
+                            st.markdown("##### 📊 數據明細 Data Details")
+                            
+                            if isinstance(rec_details, dict):
+                                if "angle_metrics" in rec_details:
+                                    am = rec_details["angle_metrics"]
+                                    if isinstance(am, str):
+                                        try: am = json.loads(am)
+                                        except Exception: am = {}
+                                    if isinstance(am, dict):
+                                        rel_t = am.get("rel_time_sec", am.get("time_sec", "0.00"))
+                                        st.write(f"時間 Time：`{rel_t} 秒` ｜ 階段 Phase：`{am.get('phase_tag', '未標註')}`")
+                                        for item in am.get("angles", []):
+                                            if isinstance(item, dict):
+                                                st.write(f"• {item.get('name', '角度')}：`{item.get('value', '0°')}`")
+
+                                tm = rec_details.get("timer_metrics", rec_details.get("timer_data", None))
+                                if tm is None and ("splits" in rec_details or "total_time" in rec_details):
+                                    tm = rec_details
+
+                                if tm:
+                                    if isinstance(tm, str):
+                                        try: tm = json.loads(tm)
+                                        except Exception: tm = {}
+
+                                    if isinstance(tm, dict):
+                                        total_t = tm.get("total_time", tm.get("total_sec", tm.get("total", "-")))
+                                        t0_v = tm.get("t0_sec", tm.get("t0", "0.00"))
+                                        st.write(f"**總時間 Total**：`{total_t} 秒` ｜ **T0 起點**：`{t0_v}s`")
+
+                                        splits = tm.get("splits", rec_details.get("splits", []))
+                                        if isinstance(splits, str):
+                                            try: splits = json.loads(splits)
+                                            except Exception: splits = []
+
+                                        if isinstance(splits, list) and len(splits) > 0:
+                                            table_rows = []
+                                            for s in splits:
+                                                if isinstance(s, dict):
+                                                    seg_name = s.get("segment", s.get("phase", s.get("name", s.get("label", "-"))))
+                                                    cum_t = s.get("cum_sec", s.get("cum_time", s.get("cumulative", "-")))
+                                                    split_t = s.get("split_sec", s.get("split_time", s.get("dt", "-")))
+                                                    spd_val = s.get("speed_ms", s.get("speed", s.get("spd", "-")))
+
+                                                    table_rows.append({
+                                                        "階段 Phase": seg_name,
+                                                        "累積時間 Cumulative (s)": f"{cum_t}s" if str(cum_t).replace('.','',1).isdigit() else str(cum_t),
+                                                        "單段 Split (s)": f"{split_t}s" if str(split_t).replace('.','',1).isdigit() else str(split_t),
+                                                        "平均速度 Speed (m/s)": f"{spd_val} m/s" if str(spd_val).replace('.','',1).isdigit() else str(spd_val)
+                                                    })
+                                            if table_rows:
+                                                st.dataframe(pd.DataFrame(table_rows), use_container_width=True, hide_index=True)
+                                        else:
+                                            st.caption("⚠️ 尚無分段數據明細 No split details found")
+
+                        st.markdown("---")
+
+# ==================== 【頁面 9：未來擴充規劃】 ====================
+elif page == "未來擴充規劃 Future Roadmap":
+    st.title("未來擴充規劃 Future Roadmap")
+    st.markdown("---")
+    st.markdown("""
+    1. **AI 3D 骨架關節自動重建**：引入 MediaPipe 3D Pose 進行空間姿態還原。
+    2. **過欄拋物線與起跳點預測**：結合物理解算，預測過欄拋物線最高點。
+    3. **團隊傷病交叉分析警報**：防護員評估報告與體能 RPE 疲勞度連動發出預警。
+    """)
