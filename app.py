@@ -53,16 +53,31 @@ st.markdown("""
     .element-container:has(.pain-nature-anchor) {
         display: none !important;
     }
-    [data-testid="stElementContainer"]:has(.pain-nature-anchor) + [data-testid="stElementContainer"] [data-baseweb="tag"],
-    .element-container:has(.pain-nature-anchor) + .element-container [data-baseweb="tag"] {
+    div[data-testid="stAppViewContainer"] [data-testid="stColumn"]:has(.pain-nature-anchor) [data-testid="stMultiSelect"] [data-baseweb="tag"],
+    div[data-testid="stAppViewContainer"] [data-testid="column"]:has(.pain-nature-anchor) [data-testid="stMultiSelect"] [data-baseweb="tag"],
+    div[data-testid="stAppViewContainer"] [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .pain-nature-anchor) [data-testid="stMultiSelect"] [data-baseweb="tag"],
+    div[data-testid="stAppViewContainer"] [data-testid="stVerticalBlock"]:has(> .element-container .pain-nature-anchor) [data-testid="stMultiSelect"] [data-baseweb="tag"],
+    div[data-testid="stAppViewContainer"] [data-testid="stElementContainer"]:has(.pain-nature-anchor) + [data-testid="stElementContainer"] [data-baseweb="tag"],
+    div[data-testid="stAppViewContainer"] .element-container:has(.pain-nature-anchor) + .element-container [data-baseweb="tag"] {
         background-color: #dc2626 !important;
+        background: #dc2626 !important;
         color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
         border-radius: 6px !important;
         border: none !important;
     }
-    [data-testid="stElementContainer"]:has(.pain-nature-anchor) + [data-testid="stElementContainer"] [data-baseweb="tag"] *,
-    .element-container:has(.pain-nature-anchor) + .element-container [data-baseweb="tag"] * {
+    div[data-testid="stAppViewContainer"] [data-testid="stColumn"]:has(.pain-nature-anchor) [data-testid="stMultiSelect"] [data-baseweb="tag"] *,
+    div[data-testid="stAppViewContainer"] [data-testid="stColumn"]:has(.pain-nature-anchor) [data-testid="stMultiSelect"] [data-baseweb="tag"] span,
+    div[data-testid="stAppViewContainer"] [data-testid="column"]:has(.pain-nature-anchor) [data-testid="stMultiSelect"] [data-baseweb="tag"] *,
+    div[data-testid="stAppViewContainer"] [data-testid="column"]:has(.pain-nature-anchor) [data-testid="stMultiSelect"] [data-baseweb="tag"] span,
+    div[data-testid="stAppViewContainer"] [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .pain-nature-anchor) [data-testid="stMultiSelect"] [data-baseweb="tag"] *,
+    div[data-testid="stAppViewContainer"] [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .pain-nature-anchor) [data-testid="stMultiSelect"] [data-baseweb="tag"] span,
+    div[data-testid="stAppViewContainer"] [data-testid="stVerticalBlock"]:has(> .element-container .pain-nature-anchor) [data-testid="stMultiSelect"] [data-baseweb="tag"] *,
+    div[data-testid="stAppViewContainer"] [data-testid="stVerticalBlock"]:has(> .element-container .pain-nature-anchor) [data-testid="stMultiSelect"] [data-baseweb="tag"] span,
+    div[data-testid="stAppViewContainer"] [data-testid="stElementContainer"]:has(.pain-nature-anchor) + [data-testid="stElementContainer"] [data-baseweb="tag"] *,
+    div[data-testid="stAppViewContainer"] .element-container:has(.pain-nature-anchor) + .element-container [data-baseweb="tag"] * {
         color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
         fill: #ffffff !important;
     }
     div[data-testid="stTextArea"]:has(textarea[aria-label*="body_map_img_b64"]),
@@ -598,8 +613,7 @@ nav_options = [
     "雙影同步 Dual Video Sync",
     "跨期數據對比 Longitudinal Comparison",
     "課表紀錄 Training Plan",
-    "歷史分析紀錄 History Records",
-    "未來擴充規劃 Future Roadmap"
+    "歷史分析紀錄 History Records"
 ]
 
 page = st.sidebar.radio("請選擇功能模組：", nav_options)
@@ -2809,13 +2823,3 @@ elif page == "歷史分析紀錄 History Records":
                                             st.caption("⚠️ 尚無分段數據明細 No split details found")
 
                         st.markdown("---")
-
-# ==================== 【頁面 9：未來擴充規劃】 ====================
-elif page == "未來擴充規劃 Future Roadmap":
-    st.title("未來擴充規劃 Future Roadmap")
-    st.markdown("---")
-    st.markdown("""
-    1. **AI 3D 骨架關節自動重建**：引入 MediaPipe 3D Pose 進行空間姿態還原。
-    2. **過欄拋物線與起跳點預測**：結合物理解算，預測過欄拋物線最高點。
-    3. **團隊傷病交叉分析警報**：防護員評估報告與體能 RPE 疲勞度連動發出預警。
-    """)
