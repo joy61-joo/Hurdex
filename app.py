@@ -260,6 +260,28 @@ def register_user(username, password, role, team_code, email, is_new_team=False)
         c.close(); conn.close()
         return False, f"註冊失敗: {str(e)}"
 
+def update_user_team_code(username, new_team_code, is_new_team=False):
+    new_team_code = new_team_code.strip().upper()
+    if not new_team_code:
+        return False, "團隊碼不可為空"
+
+    conn = get_db_connection()
+    c = conn.cursor()
+    if not is_new_team:
+        c.execute("SELECT 1 FROM users WHERE team_code = %s LIMIT 1", (new_team_code,))
+        if not c.fetchone():
+            c.close(); conn.close()
+            return False, f"找不到團隊碼「{new_team_code}」，請確認是否輸入正確"
+
+    try:
+        c.execute("UPDATE users SET team_code = %s WHERE username = %s", (new_team_code, username))
+        conn.commit()
+        c.close(); conn.close()
+        return True, new_team_code
+    except Exception as e:
+        c.close(); conn.close()
+        return False, f"更新失敗: {str(e)}"
+
 def check_login(username, password):
     conn = get_db_connection()
     c = conn.cursor()
@@ -684,10 +706,11 @@ if page == "系統首頁 Home":
                     role_verified = False
                     st.warning("請輸入正確的防護員邀請碼以驗證防護員身分")
 
-            st.markdown("**團隊設定 Team Setup**")
+            st.markdown("---")
+            st.markdown("##### 團隊設定 Team Setup")
             team_mode = st.radio(
-                "請選擇團隊加入方式（三方皆可建立新團隊或加入既有團隊）：",
-                ["建立新團隊 (自動產生團隊碼)", "加入既有團隊 (輸入團隊碼)"],
+                "請選擇團隊加入方式（三方皆可加入既有團隊或建立新團隊）：",
+                ["加入既有團隊 (輸入團隊碼)", "建立新團隊 (自動產生團隊碼)"],
                 horizontal=True,
                 key="r_team_mode"
             )
@@ -695,7 +718,9 @@ if page == "系統首頁 Home":
             is_new_team = (team_mode == "建立新團隊 (自動產生團隊碼)")
             r_team = ""
 
-            if is_new_team:
+            if not is_new_team:
+                r_team = st.text_input("請輸入團隊碼 Team Code (由團隊建立者提供，例如 HRD-XXXX)", key="r_team_join")
+            else:
                 if "reg_new_team_code" not in st.session_state:
                     st.session_state["reg_new_team_code"] = generate_random_team_code()
 
@@ -708,8 +733,6 @@ if page == "系統首頁 Home":
                         st.rerun()
 
                 r_team = st.session_state["reg_new_team_code"]
-            else:
-                r_team = st.text_input("請輸入團隊碼 Team Code (由團隊建立者提供)", key="r_team_join")
 
             if st.button("確認註冊 Register", key="btn_reg", use_container_width=True):
                 if not role_verified:
@@ -754,8 +777,52 @@ if page == "系統首頁 Home":
             st.info("🩺 **防護與訓練日誌**\n\n紀錄身體痛點、疲勞度 RPE 與防護員復健建議。")
 
         st.markdown("---")
-        with st.expander("⚙️ 帳號設定與註銷 Account Settings & Delete Account"):
-            tab_chg_pw, tab_del_acc = st.tabs(["🔑 修改密碼 Change Password", "⚠️ 註銷帳號 Delete Account"])
+        with st.expander("⚙️ 帳號設定與團隊管理 Account & Team Settings"):
+            tab_team, tab_chg_pw, tab_del_acc = st.tabs([
+                "👥 加入 / 切換團隊 Team Settings",
+                "🔑 修改密碼 Change Password",
+                "⚠️ 註銷帳號 Delete Account"
+            ])
+
+            with tab_team:
+                st.write(f"目前所屬團隊碼：**`{u['team_code']}`**")
+                switch_mode = st.radio(
+                    "選擇團隊操作方式：",
+                    ["加入既有團隊 (輸入團隊碼)", "建立新團隊 (產生新團隊碼)"],
+                    horizontal=True,
+                    key="switch_team_mode"
+                )
+                if switch_mode == "加入既有團隊 (輸入團隊碼)":
+                    input_new_tc = st.text_input("請輸入要加入的團隊碼 Team Code", key="input_switch_tc")
+                    if st.button("確認加入團隊 Join Team", key="btn_join_team"):
+                        ok, res_tc = update_user_team_code(u["username"], input_new_tc, is_new_team=False)
+                        if ok:
+                            st.session_state["user_info"]["team_code"] = res_tc
+                            st.success(f"已成功加入團隊：{res_tc}")
+                            st.rerun()
+                        else:
+                            st.error(res_tc)
+                else:
+                    if "switch_new_team_code" not in st.session_state:
+                        st.session_state["switch_new_team_code"] = generate_random_team_code()
+
+                    sc1, sc2 = st.columns([3, 1])
+                    with sc1:
+                        st.info(f"新團隊碼：**`{st.session_state['switch_new_team_code']}`**")
+                    with sc2:
+                        if st.button("🔄 換一組", key="btn_refresh_switch_tc", use_container_width=True):
+                            st.session_state["switch_new_team_code"] = generate_random_team_code()
+                            st.rerun()
+
+                    if st.button("確認建立並切換至此團隊 Create & Switch Team", key="btn_create_switch_team"):
+                        ok, res_tc = update_user_team_code(u["username"], st.session_state["switch_new_team_code"], is_new_team=True)
+                        if ok:
+                            st.session_state["user_info"]["team_code"] = res_tc
+                            del st.session_state["switch_new_team_code"]
+                            st.success(f"已建立並切換至新團隊：{res_tc}")
+                            st.rerun()
+                        else:
+                            st.error(res_tc)
 
             with tab_chg_pw:
                 with st.form("form_change_pw"):
