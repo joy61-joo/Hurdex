@@ -107,6 +107,21 @@ ROLE_LABELS = {
     "trainer": "運動防護員 Trainer"
 }
 
+TREATMENT_CHECKLIST_OPTIONS = [
+    "🧊 訓練後冰敷 (15-20分鐘)",
+    "🧘 伸展與滾筒筋膜放鬆",
+    "🩹 運動貼紮 / 護具固定",
+    "⚡ 物理治療 / 儀器處置",
+    "🏋️ 離心 / 穩定度復健訓練",
+    "🏥 建議就醫 / 影像檢查"
+]
+
+STATUS_TAG_OPTIONS = [
+    "🟢 正常訓練兼防護觀察 (Full with monitoring)",
+    "🟡 減量 / 調整課表訓練 (Modified training)",
+    "🔴 暫停專項訓練 (Rest required)"
+]
+
 def get_db_connection():
     return psycopg2.connect(st.secrets["postgres"]["url"])
 
@@ -204,7 +219,9 @@ def init_db():
         "ALTER TABLE records ADD COLUMN IF NOT EXISTS team_code TEXT NOT NULL DEFAULT 'DEFAULT_TEAM'",
         "ALTER TABLE training_plans ADD COLUMN IF NOT EXISTS team_code TEXT NOT NULL DEFAULT 'DEFAULT_TEAM'",
         "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS team_code TEXT NOT NULL DEFAULT 'DEFAULT_TEAM'",
-        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS end_date TEXT DEFAULT ''"
+        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS end_date TEXT DEFAULT ''",
+        "ALTER TABLE injury_feedbacks ADD COLUMN IF NOT EXISTS plan_id INTEGER DEFAULT NULL",
+        "ALTER TABLE injury_feedbacks ADD COLUMN IF NOT EXISTS checked_items TEXT DEFAULT '[]'"
     ]
     for q in migration_sqls:
         try:
@@ -250,7 +267,7 @@ def register_user(username, password, role, team_code, email, is_new_team=False)
     team_code = team_code.strip().upper()
     if not username: return False, "使用者名稱不可為空"
     if not password: return False, "密碼不可為空"
-    if not team_code: return False, "團隊碼不可為空"
+    if not team_code or team_code == "UNASSIGNED": return False, "團隊碼不可為空或為無效代碼"
 
     conn = get_db_connection()
     c = conn.cursor()
@@ -280,8 +297,8 @@ def register_user(username, password, role, team_code, email, is_new_team=False)
 
 def update_user_team_code(username, new_team_code, is_new_team=False):
     new_team_code = new_team_code.strip().upper()
-    if not new_team_code:
-        return False, "團隊碼不可為空"
+    if not new_team_code or new_team_code == "UNASSIGNED":
+        return False, "團隊碼不可為空或為無效代碼"
 
     conn = get_db_connection()
     c = conn.cursor()
@@ -299,6 +316,22 @@ def update_user_team_code(username, new_team_code, is_new_team=False):
     except Exception as e:
         c.close(); conn.close()
         return False, f"更新失敗: {str(e)}"
+
+def kick_team_member(team_code, target_username):
+    conn = get_db_connection()
+    c = conn.cursor()
+    try:
+        c.execute("SELECT username FROM users WHERE username = %s AND team_code = %s", (target_username, team_code))
+        if not c.fetchone():
+            c.close(); conn.close()
+            return False, "該成員已不在此團隊中"
+        c.execute("UPDATE users SET team_code = 'UNASSIGNED' WHERE username = %s AND team_code = %s", (target_username, team_code))
+        conn.commit()
+        c.close(); conn.close()
+        return True, f"已將成員「{target_username}」移出團隊"
+    except Exception as e:
+        c.close(); conn.close()
+        return False, f"移出失敗: {str(e)}"
 
 def check_login(username, password):
     conn = get_db_connection()
@@ -416,6 +449,8 @@ def update_password(username, old_password, new_password):
 
 # -------------------- 【團隊資料調取輔助】 --------------------
 def get_team_athletes(team_code):
+    if not team_code or team_code == "UNASSIGNED":
+        return []
     conn = get_db_connection()
     c = conn.cursor()
     c.execute("SELECT username FROM users WHERE team_code = %s AND role = 'player' ORDER BY username ASC", (team_code,))
@@ -424,10 +459,12 @@ def get_team_athletes(team_code):
     return [r[0] for r in rows]
 
 def get_team_members(team_code):
+    if not team_code or team_code == "UNASSIGNED":
+        return []
     conn = get_db_connection()
     c = conn.cursor()
     c.execute("""
-        SELECT username, role, created_at
+        SELECT username, role
         FROM users
         WHERE team_code = %s
         ORDER BY
@@ -622,22 +659,44 @@ def delete_training_plan(plan_id):
     conn.commit()
     c.close(); conn.close()
 
-def save_injury_feedback(athlete_username, trainer_username, team_code, feedback_date, body_part, status_tag, advice):
+def save_injury_feedback(athlete_username, trainer_username, team_code, feedback_date, body_part, status_tag, advice, plan_id=None, checked_items=None):
     conn = get_db_connection()
     c = conn.cursor()
     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    checked_json = json.dumps(checked_items if checked_items else [], ensure_ascii=False)
+
+    if plan_id is not None:
+        c.execute("SELECT id FROM injury_feedbacks WHERE plan_id = %s LIMIT 1", (int(plan_id),))
+        existing = c.fetchone()
+        if existing:
+            c.execute("""
+                UPDATE injury_feedbacks
+                SET trainer_username = %s, body_part = %s, status_tag = %s, checked_items = %s, treatment_advice = %s, created_at = %s
+                WHERE id = %s
+            """, (trainer_username, body_part, status_tag, checked_json, advice, now_str, existing[0]))
+            conn.commit()
+            c.close(); conn.close()
+            return existing[0]
+
     c.execute("""
         INSERT INTO injury_feedbacks 
-        (athlete_username, trainer_username, team_code, feedback_date, body_part, status_tag, treatment_advice, created_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-    """, (athlete_username, trainer_username, team_code, str(feedback_date), body_part, status_tag, advice, now_str))
+        (athlete_username, trainer_username, team_code, feedback_date, body_part, status_tag, treatment_advice, created_at, plan_id, checked_items)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
+    """, (athlete_username, trainer_username, team_code, str(feedback_date), body_part, status_tag, advice, now_str, plan_id, checked_json))
+    new_id = c.fetchone()[0]
     conn.commit()
     c.close(); conn.close()
+    return new_id
 
 def get_injury_feedbacks(team_code, athlete_username=None):
     conn = get_db_connection()
     c = conn.cursor()
-    query = "SELECT id, athlete_username, trainer_username, feedback_date, body_part, status_tag, treatment_advice, created_at FROM injury_feedbacks WHERE team_code = %s"
+    query = """
+        SELECT id, athlete_username, trainer_username, feedback_date, body_part, status_tag, treatment_advice, created_at, plan_id, checked_items
+        FROM injury_feedbacks
+        WHERE team_code = %s
+    """
     params = [team_code]
     if athlete_username:
         query += " AND athlete_username = %s"; params.append(athlete_username)
@@ -722,7 +781,8 @@ st.sidebar.markdown("---")
 if st.session_state["user_info"] is not None:
     u = st.session_state["user_info"]
     role_name = ROLE_LABELS.get(u['role'], u['role'])
-    st.sidebar.success(f"使用者：**{u['username']}**\n\n身分：**{role_name}**\n\n團隊碼：`{u['team_code']}`")
+    tc_disp = "尚未加入團隊" if u['team_code'] == "UNASSIGNED" else u['team_code']
+    st.sidebar.success(f"使用者：**{u['username']}**\n\n身分：**{role_name}**\n\n團隊碼：`{tc_disp}`")
     if st.sidebar.button("登出系統 Logout", key="sidebar_logout"):
         st.session_state["user_info"] = None
         st.rerun()
@@ -731,7 +791,7 @@ st.sidebar.markdown("---")
 
 nav_options = [
     "系統首頁 Home",
-    "運動防護與傷勢評估 Injury & Defense Feedback",
+    "運動防護 Injury Care",
     "比賽行事曆 Competition Calendar",
     "角度分析 Angle Analysis",
     "雙影同步 Dual Video Sync",
@@ -745,7 +805,6 @@ page = st.sidebar.radio("請選擇功能模組：", nav_options)
 # ==================== 【頁面 1：系統首頁 Home】 ====================
 if page == "系統首頁 Home":
     st.title("🏃 HURDEX 跨欄運動技術與防護分析系統")
-    st.markdown("##### 結合運科視訊量測、防護日誌與訓練追蹤的跨欄專用分析平台")
     st.markdown("---")
 
     if st.session_state["user_info"] is None:
@@ -847,17 +906,11 @@ if page == "系統首頁 Home":
                 else: st.error(msg)
     else:
         u = st.session_state["user_info"]
-        st.success(f"🎉 歡迎使用 HURDEX 運科系統，{u['username']}！您的團隊碼為：`{u['team_code']}`（可提供給團隊成員註冊加入）")
-        
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            st.info("📐 **角度分析**\n\n上傳攻欄影片，精準量測軀幹前傾角與關節角。")
-        with c2:
-            st.info("⏱️ **欄間秒數與速度**\n\n打點紀錄起跑至過欄耗時，自動計算分段速度。")
-        with c3:
-            st.info("🩺 **防護與訓練日誌**\n\n紀錄身體痛點、疲勞度 RPE 與防護員復健建議。")
+        if u["team_code"] == "UNASSIGNED":
+            st.warning("⚠️ 您目前尚未所屬團隊（或已被教練移出原團隊），請在下方「帳號設定與團隊管理」加入既有團隊或建立新團隊。")
+        else:
+            st.success(f"🎉 歡迎回來，{u['username']}！目前所屬團隊碼：`{u['team_code']}`")
 
-        st.markdown("---")
         st.subheader(f"👥 團隊成員名單 Team Roster（團隊碼：`{u['team_code']}`）")
         team_members = get_team_members(u["team_code"])
         if team_members:
@@ -872,19 +925,37 @@ if page == "系統首頁 Home":
             mc4.metric("選手 Athlete", f"{player_cnt} 人")
 
             roster_rows = []
-            for m_user, m_role, m_created in team_members:
+            for m_user, m_role in team_members:
                 is_me = "（目前帳號）" if m_user == u["username"] else ""
                 roster_rows.append({
                     "成員帳號 Username": f"{m_user} {is_me}".strip(),
-                    "團隊身分 Role": ROLE_LABELS.get(m_role, m_role),
-                    "加入時間 Joined At": m_created if m_created else "-"
+                    "團隊身分 Role": ROLE_LABELS.get(m_role, m_role)
                 })
             st.dataframe(pd.DataFrame(roster_rows), use_container_width=True, hide_index=True)
+
+            if u["role"] == "coach":
+                kickable_members = [(m_user, m_role) for m_user, m_role in team_members if m_user != u["username"]]
+                if kickable_members:
+                    with st.expander("🚫 教練團隊成員管理（移出團隊成員）"):
+                        member_map = {f"{m_user} ({ROLE_LABELS.get(m_role, m_role)})": m_user for m_user, m_role in kickable_members}
+                        sel_kick_label = st.selectbox("選擇要移出團隊的成員：", list(member_map.keys()), key="sel_kick_member")
+                        confirm_kick = st.checkbox("我確認要將此成員移出本團隊", key="chk_confirm_kick")
+                        if st.button("確認踢出團隊成員 Remove Member", key="btn_kick_member"):
+                            if not confirm_kick:
+                                st.warning("請先勾選確認移出方塊")
+                            else:
+                                target_kick_user = member_map[sel_kick_label]
+                                ok, msg = kick_team_member(u["team_code"], target_kick_user)
+                                if ok:
+                                    st.success(msg)
+                                    st.rerun()
+                                else:
+                                    st.error(msg)
         else:
             st.info("目前團隊尚無成員資料")
 
         st.markdown("---")
-        with st.expander("⚙️ 帳號設定與團隊管理 Account & Team Settings"):
+        with st.expander("⚙️ 帳號設定與團隊管理 Account & Team Settings", expanded=(u["team_code"] == "UNASSIGNED")):
             tab_team, tab_chg_pw, tab_del_acc = st.tabs([
                 "👥 加入 / 切換團隊 Team Settings",
                 "🔑 修改密碼 Change Password",
@@ -892,7 +963,8 @@ if page == "系統首頁 Home":
             ])
 
             with tab_team:
-                st.write(f"目前所屬團隊碼：**`{u['team_code']}`**")
+                tc_display = "尚未加入團隊" if u["team_code"] == "UNASSIGNED" else u["team_code"]
+                st.write(f"目前所屬團隊碼：**`{tc_display}`**")
                 switch_mode = st.radio(
                     "選擇團隊操作方式：",
                     ["加入既有團隊 (輸入團隊碼)", "建立新團隊 (產生新團隊碼)"],
@@ -964,9 +1036,9 @@ if page == "系統首頁 Home":
                         else:
                             st.error(msg)
 
-# ==================== 【頁面 2：運動防護與傷勢評估】 ====================
-elif page == "運動防護與傷勢評估 Injury & Defense Feedback":
-    st.title("🩺 運動防護與傷勢報告 Injury & Defense Feedback")
+# ==================== 【頁面 2：運動防護 Injury Care】 ====================
+elif page == "運動防護 Injury Care":
+    st.title("🩺 運動防護與傷病批改回饋 Injury Care")
     st.markdown("---")
 
     if st.session_state["user_info"] is None:
@@ -976,102 +1048,331 @@ elif page == "運動防護與傷勢評估 Injury & Defense Feedback":
         team_code = u["team_code"]
         role = u["role"]
 
-        def render_feedback_list(feedback_items, allow_delete=False):
-            if not feedback_items:
-                st.info("目前尚無防護建議報告紀錄")
-                return
+        # 取得團隊所有訓練日誌並自動彙整傷病追蹤
+        raw_plans = get_training_plans(team_code=team_code) if role in ["trainer", "coach"] else get_training_plans(username=u["username"], team_code=team_code)
+        all_feedbacks = get_injury_feedbacks(team_code) if role in ["trainer", "coach"] else get_injury_feedbacks(team_code, athlete_username=u["username"])
 
-            fb_ids = [fb[0] for fb in feedback_items]
-            replies_map = get_replies_by_feedback_ids(fb_ids)
+        # 建立 plan_id -> feedback 對應表
+        feedback_by_plan = {}
+        standalone_feedbacks = []
+        for fb in all_feedbacks:
+            fb_plan_id = fb[8]
+            if fb_plan_id is not None:
+                feedback_by_plan[int(fb_plan_id)] = fb
+            else:
+                standalone_feedbacks.append(fb)
 
-            for fb in feedback_items:
-                fb_id, a_user, t_user, f_date, b_part, s_tag, advice, c_at = fb
-                fb_replies = replies_map.get(fb_id, [])
-                reply_badge = f" ｜ 💬 {len(fb_replies)} 則回覆" if fb_replies else ""
+        # 整理選手訓練日誌中的傷病回報資料
+        organized_injury_logs = []
+        for p in reversed(raw_plans):
+            p_id, p_user, p_date, p_cat, p_content, p_intensity, p_notes, p_created = p
+            try:
+                parsed = json.loads(p_notes) if isinstance(p_notes, str) else {}
+            except Exception:
+                parsed = {}
 
-                with st.expander(f"📅 {f_date} ｜ 選手: {a_user} ｜ 部位: {b_part} ｜ {s_tag}{reply_badge}"):
-                    st.write(f"• **開立運動防護員**：`{t_user}`（建立時間：{c_at}）")
-                    st.write(f"• **防護員處置與復健建議**：\n```text\n{advice}\n```")
+            if not isinstance(parsed, dict):
+                continue
 
-                    st.markdown("---")
-                    st.markdown("##### 💬 團隊回覆與追蹤討論")
-                    if fb_replies:
-                        for rep in fb_replies:
-                            rep_id, _, s_user, s_role, rep_txt, rep_at = rep
-                            r_label = ROLE_LABELS.get(s_role, s_role)
-                            badge_bg = "#2563eb" if s_role == "coach" else ("#059669" if s_role == "trainer" else "#d97706")
-                            st.markdown(f"""
-                                <div style="background:#f8fafc; border:1px solid #e2e8f0; border-left:4px solid {badge_bg}; border-radius:6px; padding:10px 12px; margin-bottom:8px;">
-                                    <div style="font-size:12px; color:#64748b; margin-bottom:4px;">
-                                        <span style="background:{badge_bg}; color:#ffffff; padding:2px 6px; border-radius:4px; font-weight:bold; margin-right:6px;">{r_label}</span>
-                                        <b style="color:#0f172a;">{s_user}</b> · {rep_at}
-                                    </div>
-                                    <div style="font-size:14px; color:#1e293b; white-space:pre-wrap;">{rep_txt}</div>
-                                </div>
-                            """, unsafe_allow_html=True)
+            inj_list = parsed.get("injuries_list", [])
+            if inj_list and isinstance(inj_list, list):
+                max_vas = max([int(item.get("level", 0)) for item in inj_list])
+                parts_summary = "、".join([item.get("area", "未標註部位").split(" ")[0] for item in inj_list])
+                existing_fb = feedback_by_plan.get(int(p_id))
+                organized_injury_logs.append({
+                    "plan_id": int(p_id),
+                    "athlete": p_user,
+                    "date": p_date,
+                    "category": p_cat,
+                    "intensity": p_intensity,
+                    "fatigue": parsed.get("fatigue_score", "-"),
+                    "user_notes": parsed.get("user_notes", ""),
+                    "injuries": inj_list,
+                    "body_map_b64": parsed.get("body_map_img_b64", ""),
+                    "max_vas": max_vas,
+                    "parts_summary": parts_summary,
+                    "feedback": existing_fb
+                })
+
+        fb_ids_all = [fb[0] for fb in all_feedbacks]
+        replies_map = get_replies_by_feedback_ids(fb_ids_all)
+
+        def render_reply_thread(fb_id):
+            fb_replies = replies_map.get(fb_id, [])
+            st.markdown("##### 💬 團隊回覆與追蹤討論")
+            if fb_replies:
+                for rep in fb_replies:
+                    _, _, s_user, s_role, rep_txt, rep_at = rep
+                    r_label = ROLE_LABELS.get(s_role, s_role)
+                    badge_bg = "#2563eb" if s_role == "coach" else ("#059669" if s_role == "trainer" else "#d97706")
+                    st.markdown(f"""
+                        <div style="background:#f8fafc; border:1px solid #e2e8f0; border-left:4px solid {badge_bg}; border-radius:6px; padding:10px 12px; margin-bottom:8px;">
+                            <div style="font-size:12px; color:#64748b; margin-bottom:4px;">
+                                <span style="background:{badge_bg}; color:#ffffff; padding:2px 6px; border-radius:4px; font-weight:bold; margin-right:6px;">{r_label}</span>
+                                <b style="color:#0f172a;">{s_user}</b> · {rep_at}
+                            </div>
+                            <div style="font-size:14px; color:#1e293b; white-space:pre-wrap;">{rep_txt}</div>
+                        </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.caption("尚無回覆留言，教練、選手或防護員皆可在下方留言溝通。")
+
+            rep_c1, rep_c2 = st.columns([4, 1])
+            with rep_c1:
+                reply_txt = st.text_input("輸入回覆留言...", key=f"reply_inp_{fb_id}", label_visibility="collapsed", placeholder="輸入訓練調整回饋、疼痛變化或執行疑問...")
+            with rep_c2:
+                if st.button("💬 送出回覆", key=f"btn_send_rep_{fb_id}", use_container_width=True):
+                    if reply_txt.strip():
+                        save_injury_feedback_reply(fb_id, u["username"], role, reply_txt.strip())
+                        st.rerun()
                     else:
-                        st.caption("尚無回覆留言，教練、選手或防護員皆可在下方留言回覆。")
+                        st.warning("請輸入留言內容")
 
-                    reply_input = st.text_area(
-                        "輸入回覆內容（例如：訓練調整回饋、疼痛變化狀況或執行疑問）",
-                        height=80,
-                        key=f"reply_input_{fb_id}"
-                    )
-                    c_btn1, c_btn2 = st.columns([1.2, 3.8])
-                    with c_btn1:
-                        if st.button("💬 送出回覆", key=f"btn_reply_{fb_id}", use_container_width=True):
-                            if reply_input.strip():
-                                save_injury_feedback_reply(fb_id, u["username"], role, reply_input.strip())
-                                st.success("回覆已送出！")
-                                st.rerun()
-                            else:
-                                st.warning("請輸入回覆內容")
+        def render_athlete_injury_details(log_item):
+            st.markdown(f"**訓練項目**：`{log_item['category']}` ｜ **RPE**：`{log_item['intensity']}` ｜ **疲勞指數**：`{log_item['fatigue']}/10`")
+            for idx, inj in enumerate(log_item["injuries"]):
+                lvl = int(inj.get("level", 0))
+                area = inj.get("area", f"痛點 #{idx+1}")
+                ptypes = inj.get("pain_types", [])
+                n_str = inj.get("notes", "")
 
-                    if allow_delete:
-                        with c_btn2:
-                            if st.button("🗑️ 刪除這筆報告", key=f"del_fb_{fb_id}"):
-                                delete_injury_feedback(fb_id)
-                                st.rerun()
+                badges_html = ""
+                if ptypes:
+                    badges_html = " " + " ".join([
+                        f'<span style="background-color:#dc2626; color:#ffffff !important; padding:2px 7px; border-radius:4px; font-size:12px; font-weight:600;">{pt}</span>'
+                        for pt in ptypes
+                    ])
 
+                if lvl >= 5:
+                    st.markdown(f"• :red[**{area}** ｜ 疼痛 VAS: {lvl}/10]{badges_html}", unsafe_allow_html=True)
+                elif lvl > 0:
+                    st.markdown(f"• :orange[**{area}** ｜ 疼痛 VAS: {lvl}/10]{badges_html}", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"• :green[**{area}** ｜ 疼痛 VAS: 0/10 (追蹤/痊癒)]{badges_html}", unsafe_allow_html=True)
+
+                if n_str:
+                    st.caption(f"└ 選手備註：{n_str}")
+
+            if log_item["user_notes"]:
+                st.caption(f"📝 訓練感覺備註：{log_item['user_notes']}")
+
+            if log_item["body_map_b64"]:
+                st.image(log_item["body_map_b64"], caption="選手標記痛點圖", width=240)
+
+        # ==================== 【防護員端：自動彙整與批改介面】 ====================
         if role == "trainer":
-            tab_tfb, tab_listfb = st.tabs(["✍️ 新增/開立防護建議報告", "📋 團隊防護建議歷史紀錄與回覆"])
-            
-            with tab_tfb:
+            tab_review, tab_manual = st.tabs(["📋 選手傷病日誌批改區", "➕ 獨立開立防護報告"])
+
+            with tab_review:
+                total_cnt = len(organized_injury_logs)
+                reviewed_cnt = sum(1 for item in organized_injury_logs if item["feedback"] is not None)
+                pending_cnt = total_cnt - reviewed_cnt
+                high_pain_cnt = sum(1 for item in organized_injury_logs if item["max_vas"] >= 5)
+
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("總傷病日誌數", f"{total_cnt} 筆")
+                m2.metric("⏳ 待批改", f"{pending_cnt} 筆")
+                m3.metric("✅ 已批改", f"{reviewed_cnt} 筆")
+                m4.metric("🔴 中重度疼痛 (VAS≥5)", f"{high_pain_cnt} 筆")
+
+                st.markdown("---")
+                f_c1, f_c2, f_c3 = st.columns(3)
+                with f_c1:
+                    status_filter = st.selectbox("批改狀態篩選：", ["全部紀錄", "⏳ 僅顯示待批改", "✅ 僅顯示已批改"], key="tr_filter_status")
+                with f_c2:
+                    team_athletes = get_team_athletes(team_code)
+                    ath_filter = st.selectbox("選手篩選：", ["全團隊選手"] + team_athletes, key="tr_filter_ath")
+                with f_c3:
+                    pain_filter = st.selectbox("疼痛篩選：", ["全部 (含 VAS 0 追蹤)", "僅顯示有疼痛 (VAS > 0)"], key="tr_filter_pain")
+
+                filtered_logs = []
+                for item in organized_injury_logs:
+                    if status_filter == "⏳ 僅顯示待批改" and item["feedback"] is not None:
+                        continue
+                    if status_filter == "✅ 僅顯示已批改" and item["feedback"] is None:
+                        continue
+                    if ath_filter != "全團隊選手" and item["athlete"] != ath_filter:
+                        continue
+                    if pain_filter == "僅顯示有疼痛 (VAS > 0)" and item["max_vas"] == 0:
+                        continue
+                    filtered_logs.append(item)
+
+                if not filtered_logs:
+                    st.info("目前篩選條件下尚無選手傷病日誌紀錄。")
+                else:
+                    for item in filtered_logs:
+                        p_id = item["plan_id"]
+                        fb = item["feedback"]
+                        state_badge = "✅ 已批改" if fb is not None else "⏳ 待批改"
+                        vas_badge = f"🔴 VAS {item['max_vas']}/10" if item["max_vas"] >= 5 else (f"🟠 VAS {item['max_vas']}/10" if item["max_vas"] > 0 else "🟢 VAS 0/10")
+                        exp_title = f"{state_badge} ｜ 📅 {item['date']} ｜ 選手：{item['athlete']} ｜ {item['parts_summary']} ｜ {vas_badge}"
+
+                        with st.expander(exp_title, expanded=(fb is None)):
+                            col_left, col_right = st.columns([1.05, 1.15], gap="large")
+
+                            with col_left:
+                                st.markdown("##### 📄 選手日誌傷病回報內容")
+                                render_athlete_injury_details(item)
+
+                            with col_right:
+                                st.markdown("##### 🩺 防護員批改勾選與回饋")
+                                init_status = fb[5] if fb else STATUS_TAG_OPTIONS[1]
+                                if init_status not in STATUS_TAG_OPTIONS:
+                                    init_status = STATUS_TAG_OPTIONS[0]
+
+                                init_checked = []
+                                if fb and fb[9]:
+                                    try:
+                                        init_checked = json.loads(fb[9])
+                                    except Exception:
+                                        init_checked = []
+
+                                init_advice = fb[6] if fb else ""
+
+                                sel_status = st.radio(
+                                    "1. 訓練狀態核定：",
+                                    STATUS_TAG_OPTIONS,
+                                    index=STATUS_TAG_OPTIONS.index(init_status),
+                                    key=f"tr_status_{p_id}"
+                                )
+
+                                st.markdown("**2. 勾選建議防護與處置項目：**")
+                                chk_cols = st.columns(2)
+                                selected_checks = []
+                                for c_idx, opt in enumerate(TREATMENT_CHECKLIST_OPTIONS):
+                                    with chk_cols[c_idx % 2]:
+                                        is_chk = st.checkbox(opt, value=(opt in init_checked), key=f"tr_chk_{p_id}_{c_idx}")
+                                        if is_chk:
+                                            selected_checks.append(opt)
+
+                                advice_txt = st.text_area(
+                                    "3. 防護員批改評語與復健建議：",
+                                    value=init_advice,
+                                    height=105,
+                                    placeholder="請輸入針對該部位的處置提醒、課表調整建議或觀察重點...",
+                                    key=f"tr_adv_{p_id}"
+                                )
+
+                                btn_label = "💾 更新批改內容 Update Review" if fb else "✅ 完成批改並送出回饋 Submit Review"
+                                if st.button(btn_label, key=f"tr_save_{p_id}", use_container_width=True):
+                                    if not selected_checks and not advice_txt.strip():
+                                        st.warning("請至少勾選一項防護處置或填寫回饋建議！")
+                                    else:
+                                        save_injury_feedback(
+                                            athlete_username=item["athlete"],
+                                            trainer_username=u["username"],
+                                            team_code=team_code,
+                                            feedback_date=item["date"],
+                                            body_part=item["parts_summary"],
+                                            status_tag=sel_status,
+                                            advice=advice_txt.strip(),
+                                            plan_id=p_id,
+                                            checked_items=selected_checks
+                                        )
+                                        st.success(f"已完成批改並同步回饋給選手 {item['athlete']}！")
+                                        st.rerun()
+
+                            if fb is not None:
+                                st.markdown("---")
+                                render_reply_thread(fb[0])
+
+            with tab_manual:
+                st.caption("若需針對未填寫訓練日誌的日期獨立建立防護紀錄，可由此新增。")
                 team_athletes = get_team_athletes(team_code)
                 if not team_athletes:
                     st.warning("團隊目前尚無選手帳號")
                 else:
-                    with st.form("form_injury_feedback"):
+                    with st.form("form_manual_injury_feedback"):
                         sel_athlete = st.selectbox("選擇選手 Select Athlete", team_athletes)
                         fb_date = st.date_input("評估日期 Date", value=datetime.date.today())
                         body_part = st.text_input("傷痛部位 (例: 右大腿後側肌群 / 左腳踝跟腱)")
-                        status_tag = st.selectbox("傷勢狀態評估", ["🔴 需暫停專項訓練 (Rest required)", "🟡 減量運科訓練 (Modified training)", "🟢 正常訓練兼防護觀察 (Full with monitoring)"])
-                        treatment_advice = st.text_area("防護員處置與復健建議 Treatment & Rehab Advice", height=120)
-                        
-                        if st.form_submit_button("送出防護診斷報告", use_container_width=True):
-                            if body_part.strip() and treatment_advice.strip():
-                                save_injury_feedback(sel_athlete, u["username"], team_code, fb_date, body_part.strip(), status_tag, treatment_advice.strip())
+                        status_tag = st.selectbox("傷勢狀態評估", STATUS_TAG_OPTIONS)
+                        checked_manual = st.multiselect("防護處置勾選項目", TREATMENT_CHECKLIST_OPTIONS)
+                        treatment_advice = st.text_area("防護員處置與復健建議 Treatment & Rehab Advice", height=110)
+
+                        if st.form_submit_button("送出獨立防護報告", use_container_width=True):
+                            if body_part.strip() and (treatment_advice.strip() or checked_manual):
+                                save_injury_feedback(
+                                    sel_athlete, u["username"], team_code, fb_date,
+                                    body_part.strip(), status_tag, treatment_advice.strip(),
+                                    plan_id=None, checked_items=checked_manual
+                                )
                                 st.success("防護建議報告已成功送出！")
                                 st.rerun()
                             else:
-                                st.warning("請填寫部位與建議內容")
+                                st.warning("請填寫部位與處置建議")
 
-            with tab_listfb:
-                feedbacks = get_injury_feedbacks(team_code)
-                render_feedback_list(feedbacks, allow_delete=True)
-
-        elif role == "coach":
-            st.subheader("📋 團隊選手傷勢報告檢視與回覆（由運動防護員開立）")
-            team_athletes = get_team_athletes(team_code)
-            filter_ath = st.selectbox("篩選選手 Select Athlete：", ["全團隊選手"] + team_athletes) if team_athletes else "全團隊選手"
-            target_ath = None if filter_ath == "全團隊選手" else filter_ath
-            feedbacks = get_injury_feedbacks(team_code, athlete_username=target_ath)
-            render_feedback_list(feedbacks, allow_delete=False)
-
+        # ==================== 【選手端 / 教練端：檢視傷病批改回饋與討論】 ====================
         else:
-            st.subheader("📋 我的防護建議與傷勢診斷報告（檢視與回覆）")
-            my_feedbacks = get_injury_feedbacks(team_code, athlete_username=u["username"])
-            render_feedback_list(my_feedbacks, allow_delete=False)
+            if role == "coach":
+                st.subheader("📋 團隊選手傷病追蹤與防護員批改總覽")
+                team_athletes = get_team_athletes(team_code)
+                filter_ath = st.selectbox("篩選選手 Select Athlete：", ["全團隊選手"] + team_athletes) if team_athletes else "全團隊選手"
+                view_logs = [x for x in organized_injury_logs if filter_ath == "全團隊選手" or x["athlete"] == filter_ath]
+                view_standalone = [fb for fb in standalone_feedbacks if filter_ath == "全團隊選手" or fb[1] == filter_ath]
+            else:
+                st.subheader("📋 我的傷病日誌與防護員批改回饋")
+                view_logs = organized_injury_logs
+                view_standalone = standalone_feedbacks
+
+            if not view_logs and not view_standalone:
+                st.info("目前尚無傷病追蹤與防護批改紀錄。")
+            else:
+                for item in view_logs:
+                    fb = item["feedback"]
+                    state_badge = "✅ 防護員已批改" if fb is not None else "⏳ 等待防護員批改"
+                    vas_badge = f"🔴 VAS {item['max_vas']}/10" if item["max_vas"] >= 5 else (f"🟠 VAS {item['max_vas']}/10" if item["max_vas"] > 0 else "🟢 VAS 0/10")
+                    ath_prefix = f"選手：{item['athlete']} ｜ " if role == "coach" else ""
+                    exp_title = f"{state_badge} ｜ 📅 {item['date']} ｜ {ath_prefix}{item['parts_summary']} ｜ {vas_badge}"
+
+                    with st.expander(exp_title, expanded=(fb is not None)):
+                        c_a, c_b = st.columns([1, 1.1], gap="large")
+                        with c_a:
+                            st.markdown("##### 📄 訓練日誌傷病紀錄")
+                            render_athlete_injury_details(item)
+
+                        with c_b:
+                            st.markdown("##### 🩺 防護員批改結果與處置建議")
+                            if fb is None:
+                                st.info("⏳ 防護員尚未批改此筆傷病日誌，批改完成後將即時顯示於此處。")
+                            else:
+                                _, _, t_user, _, _, s_tag, advice, c_at, _, chk_json = fb
+                                try:
+                                    chk_list = json.loads(chk_json) if chk_json else []
+                                except Exception:
+                                    chk_list = []
+
+                                st.write(f"• **批改防護員**：`{t_user}`（更新時間：{c_at}）")
+                                st.write(f"• **訓練狀態核定**：**{s_tag}**")
+                                if chk_list:
+                                    st.markdown("• **防護處置勾選清單**：")
+                                    for c_item in chk_list:
+                                        st.markdown(f"  - ☑️ **{c_item}**")
+                                if advice:
+                                    st.markdown(f"• **防護員評語與建議**：\n```text\n{advice}\n```")
+
+                        if fb is not None:
+                            st.markdown("---")
+                            render_reply_thread(fb[0])
+
+                if view_standalone:
+                    st.markdown("---")
+                    st.markdown("##### 📌 防護員獨立開立報告")
+                    for fb in view_standalone:
+                        fb_id, a_user, t_user, f_date, b_part, s_tag, advice, c_at, _, chk_json = fb
+                        try:
+                            chk_list = json.loads(chk_json) if chk_json else []
+                        except Exception:
+                            chk_list = []
+                        with st.expander(f"📅 {f_date} ｜ 選手: {a_user} ｜ 部位: {b_part} ｜ {s_tag}"):
+                            st.write(f"• **開立運動防護員**：`{t_user}`（建立時間：{c_at}）")
+                            if chk_list:
+                                for c_item in chk_list:
+                                    st.markdown(f"- ☑️ **{c_item}**")
+                            if advice:
+                                st.write(f"• **防護員處置與復健建議**：\n```text\n{advice}\n```")
+                            st.markdown("---")
+                            render_reply_thread(fb_id)
 
 # ==================== 【頁面 3：比賽行事曆】 ====================
 elif page == "比賽行事曆 Competition Calendar":
@@ -2670,7 +2971,6 @@ elif page == "課表紀錄 Training Plan":
                                         delete_training_plan(p_id)
                                         st.rerun()
                         else:
-                            # -------------------- 【編輯訓練日誌表單】 --------------------
                             st.info(f"✏️ 正在修改 **{p_date}** 的訓練日誌（修改完成後請點擊下方「💾 儲存修改」）")
 
                             p_dict = parsed_notes if isinstance(parsed_notes, dict) else {}
@@ -2888,7 +3188,6 @@ elif page == "課表紀錄 Training Plan":
                 st.markdown("---")
                 st.markdown("##### 2. 體能與恢復狀態 Recovery Status & Physiology")
 
-                # 第一列：3 等分生理與疲勞指標
                 c_r1, c_r2, c_r3 = st.columns(3, gap="medium")
                 with c_r1:
                     fatigue_score = st.slider("身體疲勞指數 Fatigue (1–10)", 1, 10, 3, key="log_fatigue")
@@ -2897,14 +3196,12 @@ elif page == "課表紀錄 Training Plan":
                 with c_r3:
                     menstrual_period = st.radio("生理期紀錄 Menstrual Period", ["無", "有"], horizontal=True, key="log_menstrual")
 
-                # 第二列：2 等分作息時間
                 c_t1, c_t2 = st.columns(2, gap="medium")
                 with c_t1:
                     bedtime = st.time_input("睡覺時間 Bedtime", value=datetime.time(23, 0), key="log_bedtime")
                 with c_t2:
                     waketime = st.time_input("起床時間 Wake-up Time", value=datetime.time(6, 30), key="log_waketime")
 
-                # 第三列：2 等分睡眠總時長與恢復性睡眠比例
                 c_s1, c_s2 = st.columns(2, gap="medium")
                 with c_s1:
                     st.caption("昨夜睡眠總時長 Sleep Duration")
@@ -3234,7 +3531,7 @@ elif page == "歷史分析紀錄 History Records":
         records = get_user_records(username=None if is_coach else user["username"])
 
         if not records:
-            st.warning("尚無任何分析紀錄 No History Records Found")
+            st.warning("尚無分析紀錄 No History Records Found")
         else:
             grouped_records = {}
             for rec in records:
