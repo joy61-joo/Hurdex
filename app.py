@@ -573,6 +573,17 @@ def save_training_plan(username, team_code, plan_date, category, content, intens
     conn.commit()
     c.close(); conn.close()
 
+def update_training_plan(plan_id, plan_date, category, content, intensity, notes):
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("""
+        UPDATE training_plans
+        SET plan_date = %s, category = %s, content = %s, intensity = %s, notes = %s
+        WHERE id = %s
+    """, (str(plan_date), category, content, intensity, notes, plan_id))
+    conn.commit()
+    c.close(); conn.close()
+
 def get_training_plans(*args, **kwargs):
     conn = get_db_connection()
     c = conn.cursor()
@@ -2422,6 +2433,80 @@ elif page == "課表紀錄 Training Plan":
         role = user["role"]
         is_staff = (role in ["coach", "trainer"])
 
+        BODY_PART_OPTIONS = [
+            "頭頸部 Head & Neck",
+            "右肩內側(前側) Right Medial/Anterior Shoulder",
+            "右肩外側 Right Lateral Shoulder",
+            "左肩內側(前側) Left Medial/Anterior Shoulder",
+            "左肩外側 Left Lateral Shoulder",
+            "胸大肌 Pectoralis Major",
+            "腹直肌/核心 Rectus Abdominis",
+            "下背/腰椎肌群 Lower Back Lumbar",
+            "右臀肌 Right Gluteus",
+            "左臀肌 Left Gluteus",
+            "右髖內側(內收肌群) Right Medial Hip / Adductors",
+            "右髖外側 Right Lateral Hip",
+            "左髖內側(內收肌群) Left Medial Hip / Adductors",
+            "左髖外側 Left Lateral Hip",
+            "右大腿前側(股四頭肌) Right Quadriceps",
+            "左大腿前側(股四頭肌) Left Quadriceps",
+            "右大腿內側 Right Medial Thigh",
+            "右大腿外側(髂脛束) Right Lateral Thigh / ITB",
+            "左大腿內側 Left Medial Thigh",
+            "左大腿外側(髂脛束) Left Lateral Thigh / ITB",
+            "右大腿後側內側(半腱/半膜肌) Right Medial Hamstrings",
+            "右大腿後側外側(股二頭肌) Right Lateral Hamstrings",
+            "左大腿後側內側(半腱/半膜肌) Left Medial Hamstrings",
+            "左大腿後側外側(股二頭肌) Left Lateral Hamstrings",
+            "右膝前側(髕腱) Right Anterior Knee",
+            "右膝內側 Right Medial Knee",
+            "右膝外側 Right Lateral Knee",
+            "左膝前側(髕腱) Left Anterior Knee",
+            "左膝內側 Left Medial Knee",
+            "左膝外側 Left Lateral Knee",
+            "右小腿內側 Right Medial Calf",
+            "右小腿外側 Right Lateral Calf",
+            "右跟腱 Right Achilles Tendon",
+            "左小腿內側 Left Medial Calf",
+            "左小腿外側 Left Lateral Calf",
+            "左跟腱 Left Achilles Tendon",
+            "右腳踝內側 Right Medial Ankle",
+            "右腳踝外側 Right Lateral Ankle",
+            "左腳踝內側 Left Medial Ankle",
+            "左腳踝外側 Left Lateral Ankle",
+            "右腳底內側(足弓) Right Medial Plantar",
+            "右腳底外側 Right Lateral Plantar",
+            "左腳底內側(足弓) Left Medial Plantar",
+            "左腳底外側 Left Lateral Plantar"
+        ]
+
+        PAIN_NATURE_OPTIONS = [
+            "延遲性酸痛 (DOMS)", "肌肉緊繃/僵硬", "拉扯痛/牽扯感", "撕裂痛",
+            "銳痛/刺痛", "鈍痛/深層隱痛", "關節卡痛/摩擦感", "按壓痛",
+            "腫脹壓迫痛", "灼熱感/發炎痛", "脈動痛/跳痛",
+            "麻木感/麻痛", "放射痛/電擊感"
+        ]
+
+        RPE_OPTIONS = [
+            "1 非常輕鬆",
+            "2 很輕鬆",
+            "3 輕鬆",
+            "4 稍微吃力",
+            "5 中等",
+            "6 稍微艱難",
+            "7 艱難",
+            "8 非常艱難",
+            "9 接近極限",
+            "10 極限"
+        ]
+
+        CATEGORY_OPTIONS = [
+            "欄架技術 Hurdle Technique",
+            "爆發力/重量 Explosive/Strength",
+            "速耐力/心肺 Speed Endurance",
+            "恢復/伸展 Recovery"
+        ]
+
         def render_training_log_history():
             st.subheader("團隊訓練課表與日誌歷史檔案 Team Training Log Archive" if is_staff else "訓練課表與日誌歷史檔案 Training Log Archive")
             if is_staff:
@@ -2488,79 +2573,262 @@ elif page == "課表紀錄 Training Plan":
                     if is_staff:
                         expander_title = f"日期 Date: {p_date} ｜ 選手 Athlete: {p_user} ｜ 類別: {p_cat} ｜ RPE: {p_intensity}"
                     else:
-                        expander_title = f"日期 Date: {p_date}"
+                        expander_title = f"日期 Date: {p_date} ｜ {p_cat}"
 
                     with st.expander(expander_title):
-                        if not is_staff:
-                            st.write(f"• **訓練類別 Category**：`{p_cat}` ｜ **本體感覺 RPE**：`{p_intensity}`")
+                        edit_mode_key = f"editing_plan_{p_id}"
+                        edit_inj_key = f"edit_injuries_{p_id}"
+                        is_editing = st.session_state.get(edit_mode_key, False)
+                        can_modify = (is_staff or p_user == user["username"])
 
-                        if parsed_notes and isinstance(parsed_notes, dict):
-                            tot_s = parsed_notes.get('total_sleep_hr', 0)
-                            s_h = parsed_notes.get('sleep_hours', int(tot_s))
-                            s_m = parsed_notes.get('sleep_mins', int((tot_s - int(tot_s))*60))
-                            sleep_str = f"`{s_h}小時 {s_m}分`"
+                        if not is_editing:
+                            if not is_staff:
+                                st.write(f"• **訓練類別 Category**：`{p_cat}` ｜ **本體感覺 RPE**：`{p_intensity}`")
 
-                            bedtime_str = parsed_notes.get('bedtime', '-')
-                            waketime_str = parsed_notes.get('waketime', '-')
-                            restorative_pct = parsed_notes.get('restorative_sleep_pct', None)
-                            restorative_str = f"`{restorative_pct}%`" if restorative_pct is not None else "`-`"
-                            period_str = parsed_notes.get('menstrual_period', '-')
+                            if parsed_notes and isinstance(parsed_notes, dict):
+                                tot_s = parsed_notes.get('total_sleep_hr', 0)
+                                s_h = parsed_notes.get('sleep_hours', int(tot_s))
+                                s_m = parsed_notes.get('sleep_mins', int((tot_s - int(tot_s))*60))
+                                sleep_str = f"`{s_h}小時 {s_m}分`"
 
-                            inj_list = parsed_notes.get("injuries_list", [])
-                            st.markdown("**訓練與生理狀態：**")
-                            c_d1, c_d2, c_d3 = st.columns(3)
-                            with c_d1:
-                                st.write(f"• 訓練時長：`{parsed_notes.get('duration_min', '-')} 分鐘`")
-                                st.write(f"• 睡覺 / 起床時間：`{bedtime_str}` ～ `{waketime_str}`")
-                            with c_d2:
-                                st.write(f"• 疲勞指數：`{parsed_notes.get('fatigue_score', '-')}/10`")
-                                st.write(f"• 睡眠總時長：{sleep_str} ｜ 恢復性睡眠：{restorative_str}")
-                            with c_d3:
-                                st.write(f"• 靜息心率：`{parsed_notes.get('resting_hr', '-')} bpm`")
-                                st.write(f"• 生理期紀錄：`{period_str}`")
+                                bedtime_str = parsed_notes.get('bedtime', '-')
+                                waketime_str = parsed_notes.get('waketime', '-')
+                                restorative_pct = parsed_notes.get('restorative_sleep_pct', None)
+                                restorative_str = f"`{restorative_pct}%`" if restorative_pct is not None else "`-`"
+                                period_str = parsed_notes.get('menstrual_period', '-')
 
-                            col_inj_text, col_inj_map = st.columns([1.2, 0.8])
-                            with col_inj_text:
-                                st.markdown("**痛點部位與疼痛性質紀錄 Injury Details：**")
-                                if inj_list:
-                                    for inj in inj_list:
-                                        lvl = inj.get("level", 0)
-                                        area = inj.get("area", f"痛點 #{inj.get('id',1)}")
-                                        ptypes = inj.get("pain_types", [])
-                                        ptypes_badges = ""
-                                        if ptypes:
-                                            badges_html = " ".join([
-                                                f'<span style="background-color:#dc2626; color:#ffffff !important; padding:2px 7px; border-radius:4px; font-size:12px; font-weight:600;">{pt}</span>'
-                                                for pt in ptypes
-                                            ])
-                                            ptypes_badges = f" ｜ 性質：{badges_html}"
-                                        n_str = inj.get("notes", "")
-                                        n_fmt = f" ({n_str})" if n_str else ""
-                                        
-                                        if lvl >= 5:
-                                            st.markdown(f"• :red[**{area}** ｜ 疼痛 VAS: {lvl}/10]{ptypes_badges}{n_fmt}", unsafe_allow_html=True)
-                                        elif lvl > 0:
-                                            st.markdown(f"• :orange[**{area}** ｜ 疼痛 VAS: {lvl}/10 (復原中)]{ptypes_badges}{n_fmt}", unsafe_allow_html=True)
-                                        else:
-                                            st.markdown(f"• :green[**{area}** ｜ 疼痛 VAS: 0/10 (痊癒)]{ptypes_badges}{n_fmt}", unsafe_allow_html=True)
-                                else:
-                                    st.markdown(":green[良好無傷病 No Active Injury]")
+                                inj_list = parsed_notes.get("injuries_list", [])
+                                st.markdown("**訓練與生理狀態：**")
+                                c_d1, c_d2, c_d3 = st.columns(3)
+                                with c_d1:
+                                    st.write(f"• 訓練時長：`{parsed_notes.get('duration_min', '-')} 分鐘`")
+                                    st.write(f"• 睡覺 / 起床時間：`{bedtime_str}` ～ `{waketime_str}`")
+                                with c_d2:
+                                    st.write(f"• 疲勞指數：`{parsed_notes.get('fatigue_score', '-')}/10`")
+                                    st.write(f"• 睡眠總時長：{sleep_str} ｜ 恢復性睡眠：{restorative_str}")
+                                with c_d3:
+                                    st.write(f"• 靜息心率：`{parsed_notes.get('resting_hr', '-')} bpm`")
+                                    st.write(f"• 生理期紀錄：`{period_str}`")
 
-                            with col_inj_map:
-                                if "body_map_img_b64" in parsed_notes and parsed_notes["body_map_img_b64"]:
-                                    st.image(parsed_notes["body_map_img_b64"], caption="當時人體標記圖 Body Map Snapshot", use_container_width=True)
+                                col_inj_text, col_inj_map = st.columns([1.2, 0.8])
+                                with col_inj_text:
+                                    st.markdown("**痛點部位與疼痛性質紀錄 Injury Details：**")
+                                    if inj_list:
+                                        for inj in inj_list:
+                                            lvl = inj.get("level", 0)
+                                            area = inj.get("area", f"痛點 #{inj.get('id',1)}")
+                                            ptypes = inj.get("pain_types", [])
+                                            ptypes_badges = ""
+                                            if ptypes:
+                                                badges_html = " ".join([
+                                                    f'<span style="background-color:#dc2626; color:#ffffff !important; padding:2px 7px; border-radius:4px; font-size:12px; font-weight:600;">{pt}</span>'
+                                                    for pt in ptypes
+                                                ])
+                                                ptypes_badges = f" ｜ 性質：{badges_html}"
+                                            n_str = inj.get("notes", "")
+                                            n_fmt = f" ({n_str})" if n_str else ""
+                                            
+                                            if lvl >= 5:
+                                                st.markdown(f"• :red[**{area}** ｜ 疼痛 VAS: {lvl}/10]{ptypes_badges}{n_fmt}", unsafe_allow_html=True)
+                                            elif lvl > 0:
+                                                st.markdown(f"• :orange[**{area}** ｜ 疼痛 VAS: {lvl}/10 (復原中)]{ptypes_badges}{n_fmt}", unsafe_allow_html=True)
+                                            else:
+                                                st.markdown(f"• :green[**{area}** ｜ 疼痛 VAS: 0/10 (痊癒)]{ptypes_badges}{n_fmt}", unsafe_allow_html=True)
+                                    else:
+                                        st.markdown(":green[良好無傷病 No Active Injury]")
 
-                            st.markdown(f"**課表細節：**\n```text\n{p_content}\n```")
-                            u_notes = parsed_notes.get("user_notes", "")
-                            if u_notes:
-                                st.markdown(f"**動作感覺與教練叮嚀：**\n```text\n{u_notes}\n```")
+                                with col_inj_map:
+                                    if "body_map_img_b64" in parsed_notes and parsed_notes["body_map_img_b64"]:
+                                        st.image(parsed_notes["body_map_img_b64"], caption="當時人體標記圖 Body Map Snapshot", use_container_width=True)
+
+                                st.markdown(f"**課表細節：**\n```text\n{p_content}\n```")
+                                u_notes = parsed_notes.get("user_notes", "")
+                                if u_notes:
+                                    st.markdown(f"**動作感覺與教練叮嚀：**\n```text\n{u_notes}\n```")
+                            else:
+                                st.markdown(f"**課表細節 Details：**\n```text\n{p_content}\n```")
+
+                            if can_modify:
+                                st.markdown("---")
+                                act_c1, act_c2, _ = st.columns([1.1, 1.1, 2.8])
+                                with act_c1:
+                                    if st.button("✏️ 編輯日誌 Edit Log", key=f"btn_edit_plan_{p_id}", use_container_width=True):
+                                        st.session_state[edit_mode_key] = True
+                                        orig_inj = parsed_notes.get("injuries_list", []) if isinstance(parsed_notes, dict) else []
+                                        st.session_state[edit_inj_key] = [
+                                            {
+                                                "area": item.get("area", BODY_PART_OPTIONS[0]),
+                                                "level": int(item.get("level", 0)),
+                                                "pain_types": list(item.get("pain_types", [])),
+                                                "notes": item.get("notes", "")
+                                            }
+                                            for item in orig_inj
+                                        ]
+                                        st.rerun()
+                                with act_c2:
+                                    if st.button("🗑️ 刪除日誌 Delete Log", key=f"del_plan_{p_id}", use_container_width=True):
+                                        delete_training_plan(p_id)
+                                        st.rerun()
                         else:
-                            st.markdown(f"**課表細節 Details：**\n```text\n{p_content}\n```")
-                        
-                        if is_staff or p_user == user["username"]:
-                            if st.button(f"刪除日誌 Log ID {p_id}", key=f"del_plan_{p_id}"):
-                                delete_training_plan(p_id)
+                            # -------------------- 【編輯訓練日誌表單】 --------------------
+                            st.info(f"✏️ 正在修改 **{p_date}** 的訓練日誌（修改完成後請點擊下方「💾 儲存修改」）")
+
+                            p_dict = parsed_notes if isinstance(parsed_notes, dict) else {}
+                            try:
+                                init_date = datetime.datetime.strptime(p_date, "%Y-%m-%d").date()
+                            except Exception:
+                                init_date = datetime.date.today()
+
+                            try:
+                                init_bed = datetime.datetime.strptime(p_dict.get("bedtime", "23:00"), "%H:%M").time()
+                            except Exception:
+                                init_bed = datetime.time(23, 0)
+
+                            try:
+                                init_wake = datetime.datetime.strptime(p_dict.get("waketime", "06:30"), "%H:%M").time()
+                            except Exception:
+                                init_wake = datetime.time(6, 30)
+
+                            cat_opts = CATEGORY_OPTIONS if p_cat in CATEGORY_OPTIONS else [p_cat] + CATEGORY_OPTIONS
+                            rpe_opts = RPE_OPTIONS if p_intensity in RPE_OPTIONS else [p_intensity] + RPE_OPTIONS
+
+                            st.markdown("##### 1. 基本訓練設定 Basic Plan Info")
+                            ec_p1, ec_p2 = st.columns(2, gap="medium")
+                            with ec_p1:
+                                edit_date = st.date_input("訓練日期 Training Date", value=init_date, key=f"edit_date_{p_id}")
+                                edit_dur = st.number_input("訓練總時長 (分鐘 min)", min_value=10, max_value=300, value=int(p_dict.get("duration_min", 90)), step=5, key=f"edit_dur_{p_id}")
+                            with ec_p2:
+                                edit_cat = st.selectbox("訓練主題與類別", cat_opts, index=cat_opts.index(p_cat), key=f"edit_cat_{p_id}")
+                                edit_rpe = st.select_slider("本體感覺 RPE", options=rpe_opts, value=p_intensity, key=f"edit_rpe_{p_id}")
+
+                            st.markdown("##### 2. 體能與恢復狀態 Recovery Status & Physiology")
+                            ec_r1, ec_r2, ec_r3 = st.columns(3, gap="medium")
+                            with ec_r1:
+                                edit_fatigue = st.slider("身體疲勞指數 Fatigue (1–10)", 1, 10, int(p_dict.get("fatigue_score", 3)), key=f"edit_fatigue_{p_id}")
+                            with ec_r2:
+                                edit_hr = st.number_input("靜息心率 Resting HR (bpm)", min_value=40, max_value=220, value=int(p_dict.get("resting_hr", 65)), key=f"edit_hr_{p_id}")
+                            with ec_r3:
+                                init_period = p_dict.get("menstrual_period", "無")
+                                period_idx = 1 if init_period == "有" else 0
+                                edit_period = st.radio("生理期紀錄 Menstrual Period", ["無", "有"], index=period_idx, horizontal=True, key=f"edit_period_{p_id}")
+
+                            ec_t1, ec_t2 = st.columns(2, gap="medium")
+                            with ec_t1:
+                                edit_bedtime = st.time_input("睡覺時間 Bedtime", value=init_bed, key=f"edit_bed_{p_id}")
+                            with ec_t2:
+                                edit_waketime = st.time_input("起床時間 Wake-up Time", value=init_wake, key=f"edit_wake_{p_id}")
+
+                            ec_s1, ec_s2 = st.columns(2, gap="medium")
+                            with ec_s1:
+                                st.caption("昨夜睡眠總時長 Sleep Duration")
+                                ecs_h, ecs_m = st.columns(2, gap="small")
+                                with ecs_h:
+                                    edit_sleep_h = st.number_input("小時 (hr)", min_value=0, max_value=24, value=int(p_dict.get("sleep_hours", 7)), step=1, key=f"edit_sh_{p_id}")
+                                with ecs_m:
+                                    edit_sleep_m = st.number_input("分鐘 (min)", min_value=0, max_value=59, value=int(p_dict.get("sleep_mins", 30)), step=5, key=f"edit_sm_{p_id}")
+                                edit_total_sleep = edit_sleep_h + (edit_sleep_m / 60.0)
+                            with ec_s2:
+                                st.caption("深層 / REM 恢復性睡眠比例")
+                                edit_rest_sleep = st.number_input("恢復性睡眠 Restorative Sleep (%)", min_value=0, max_value=100, value=int(p_dict.get("restorative_sleep_pct", 45)), step=1, key=f"edit_rs_{p_id}")
+
+                            st.markdown("###### 傷害追蹤修正 Injury Tracking")
+                            edit_injuries_list = st.session_state.get(edit_inj_key, [])
+                            updated_injuries_data = []
+                            edit_del_idx = None
+
+                            for e_idx, e_item in enumerate(edit_injuries_list):
+                                with st.container(border=True):
+                                    esel1, esel2, esel3 = st.columns([1.5, 1.1, 1.6], gap="medium")
+                                    with esel1:
+                                        area_opts = BODY_PART_OPTIONS if e_item["area"] in BODY_PART_OPTIONS else [e_item["area"]] + BODY_PART_OPTIONS
+                                        e_area = st.selectbox(f"痛點部位 #{e_idx+1}", area_opts, index=area_opts.index(e_item["area"]), key=f"edit_area_{p_id}_{e_idx}")
+                                    with esel2:
+                                        e_lvl = st.slider(f"疼痛等級 (VAS 0-10)", 0, 10, int(e_item.get("level", 0)), key=f"edit_lvl_{p_id}_{e_idx}")
+                                        if st.button("刪除此痛點", key=f"edit_del_inj_{p_id}_{e_idx}"):
+                                            edit_del_idx = e_idx
+                                    with esel3:
+                                        e_default_pts = e_item.get("pain_types", [])
+                                        if not isinstance(e_default_pts, list):
+                                            e_default_pts = []
+                                        st.markdown('<span class="pain-nature-anchor"></span>', unsafe_allow_html=True)
+                                        e_ptypes = st.multiselect(
+                                            f"疼痛性質 (可多選)",
+                                            options=PAIN_NATURE_OPTIONS,
+                                            default=[pt for pt in e_default_pts if pt in PAIN_NATURE_OPTIONS],
+                                            key=f"edit_ptypes_{p_id}_{e_idx}"
+                                        )
+                                    e_note = st.text_area(
+                                        f"備註說明 #{e_idx+1}",
+                                        value=e_item.get("notes", ""),
+                                        height=95,
+                                        placeholder="請輸入疼痛觸發動作、痠痛程度變化、冰敷/伸展處置等詳細說明...",
+                                        key=f"edit_note_{p_id}_{e_idx}"
+                                    )
+
+                                    updated_injuries_data.append({
+                                        "id": e_idx + 1,
+                                        "area": e_area,
+                                        "level": e_lvl,
+                                        "pain_types": e_ptypes,
+                                        "notes": e_note
+                                    })
+
+                            if edit_del_idx is not None:
+                                st.session_state[edit_inj_key].pop(edit_del_idx)
                                 st.rerun()
+
+                            if st.button("➕ 新增身體部位痛點", key=f"edit_add_inj_{p_id}"):
+                                st.session_state[edit_inj_key].append({"area": "右膝內側 Right Medial Knee", "level": 0, "pain_types": [], "notes": ""})
+                                st.rerun()
+
+                            st.markdown("##### 3. 課表內容與自主備註 Plan Details & Notes")
+                            edit_content = st.text_area("課表細節與組數規劃 Plan Details & Sets", value=p_content, height=120, key=f"edit_content_{p_id}")
+                            init_u_notes = p_dict.get("user_notes", "") if parsed_notes is not None else (p_notes or "")
+                            edit_u_notes = st.text_area("動作感覺與教練叮嚀 Notes & Feedback", value=init_u_notes, height=85, key=f"edit_unotes_{p_id}")
+
+                            sb_c1, sb_c2, _ = st.columns([1.2, 1.2, 2.6])
+                            with sb_c1:
+                                if st.button("💾 儲存修改 Save Changes", key=f"btn_save_edit_{p_id}", use_container_width=True):
+                                    if edit_content.strip():
+                                        updated_extra_info = {
+                                            "duration_min": edit_dur,
+                                            "rpe_feeling": edit_rpe,
+                                            "fatigue_score": edit_fatigue,
+                                            "bedtime": edit_bedtime.strftime("%H:%M"),
+                                            "waketime": edit_waketime.strftime("%H:%M"),
+                                            "sleep_hours": edit_sleep_h,
+                                            "sleep_mins": edit_sleep_m,
+                                            "total_sleep_hr": round(edit_total_sleep, 2),
+                                            "restorative_sleep_pct": edit_rest_sleep,
+                                            "resting_hr": edit_hr,
+                                            "menstrual_period": edit_period,
+                                            "injuries_list": updated_injuries_data,
+                                            "body_map_img_b64": p_dict.get("body_map_img_b64", ""),
+                                            "user_notes": edit_u_notes
+                                        }
+                                        update_training_plan(
+                                            p_id,
+                                            str(edit_date),
+                                            edit_cat,
+                                            edit_content,
+                                            edit_rpe,
+                                            json.dumps(updated_extra_info, ensure_ascii=False)
+                                        )
+                                        if edit_mode_key in st.session_state:
+                                            del st.session_state[edit_mode_key]
+                                        if edit_inj_key in st.session_state:
+                                            del st.session_state[edit_inj_key]
+                                        st.success("日誌修改已成功儲存！")
+                                        st.rerun()
+                                    else:
+                                        st.warning("課表細節不可為空！")
+                            with sb_c2:
+                                if st.button("❌ 取消編輯 Cancel", key=f"btn_cancel_edit_{p_id}", use_container_width=True):
+                                    if edit_mode_key in st.session_state:
+                                        del st.session_state[edit_mode_key]
+                                    if edit_inj_key in st.session_state:
+                                        del st.session_state[edit_inj_key]
+                                    st.rerun()
 
         if is_staff:
             render_training_log_history()
@@ -2606,73 +2874,6 @@ elif page == "課表紀錄 Training Plan":
                     st.session_state["dyn_injuries"] = carried_injuries
                     st.session_state["dyn_injuries_user"] = target_athlete
 
-                BODY_PART_OPTIONS = [
-                    "頭頸部 Head & Neck",
-                    "右肩內側(前側) Right Medial/Anterior Shoulder",
-                    "右肩外側 Right Lateral Shoulder",
-                    "左肩內側(前側) Left Medial/Anterior Shoulder",
-                    "左肩外側 Left Lateral Shoulder",
-                    "胸大肌 Pectoralis Major",
-                    "腹直肌/核心 Rectus Abdominis",
-                    "下背/腰椎肌群 Lower Back Lumbar",
-                    "右臀肌 Right Gluteus",
-                    "左臀肌 Left Gluteus",
-                    "右髖內側(內收肌群) Right Medial Hip / Adductors",
-                    "右髖外側 Right Lateral Hip",
-                    "左髖內側(內收肌群) Left Medial Hip / Adductors",
-                    "左髖外側 Left Lateral Hip",
-                    "右大腿前側(股四頭肌) Right Quadriceps",
-                    "左大腿前側(股四頭肌) Left Quadriceps",
-                    "右大腿內側 Right Medial Thigh",
-                    "右大腿外側(髂脛束) Right Lateral Thigh / ITB",
-                    "左大腿內側 Left Medial Thigh",
-                    "左大腿外側(髂脛束) Left Lateral Thigh / ITB",
-                    "右大腿後側內側(半腱/半膜肌) Right Medial Hamstrings",
-                    "右大腿後側外側(股二頭肌) Right Lateral Hamstrings",
-                    "左大腿後側內側(半腱/半膜肌) Left Medial Hamstrings",
-                    "左大腿後側外側(股二頭肌) Left Lateral Hamstrings",
-                    "右膝前側(髕腱) Right Anterior Knee",
-                    "右膝內側 Right Medial Knee",
-                    "右膝外側 Right Lateral Knee",
-                    "左膝前側(髕腱) Left Anterior Knee",
-                    "左膝內側 Left Medial Knee",
-                    "左膝外側 Left Lateral Knee",
-                    "右小腿內側 Right Medial Calf",
-                    "右小腿外側 Right Lateral Calf",
-                    "右跟腱 Right Achilles Tendon",
-                    "左小腿內側 Left Medial Calf",
-                    "左小腿外側 Left Lateral Calf",
-                    "左跟腱 Left Achilles Tendon",
-                    "右腳踝內側 Right Medial Ankle",
-                    "右腳踝外側 Right Lateral Ankle",
-                    "左腳踝內側 Left Medial Ankle",
-                    "左腳踝外側 Left Lateral Ankle",
-                    "右腳底內側(足弓) Right Medial Plantar",
-                    "右腳底外側 Right Lateral Plantar",
-                    "左腳底內側(足弓) Left Medial Plantar",
-                    "左腳底外側 Left Lateral Plantar"
-                ]
-
-                PAIN_NATURE_OPTIONS = [
-                    "延遲性酸痛 (DOMS)", "肌肉緊繃/僵硬", "拉扯痛/牽扯感", "撕裂痛",
-                    "銳痛/刺痛", "鈍痛/深層隱痛", "關節卡痛/摩擦感", "按壓痛",
-                    "腫脹壓迫痛", "灼熱感/發炎痛", "脈動痛/跳痛",
-                    "麻木感/麻痛", "放射痛/電擊感"
-                ]
-
-                RPE_OPTIONS = [
-                    "1 非常輕鬆",
-                    "2 很輕鬆",
-                    "3 輕鬆",
-                    "4 稍微吃力",
-                    "5 中等",
-                    "6 稍微艱難",
-                    "7 艱難",
-                    "8 非常艱難",
-                    "9 接近極限",
-                    "10 極限"
-                ]
-
                 captured_body_map_img = st.text_area("body_map_img_b64", key="captured_body_map_img", label_visibility="collapsed")
 
                 st.markdown("##### 1. 基本訓練設定 Basic Plan Info")
@@ -2681,7 +2882,7 @@ elif page == "課表紀錄 Training Plan":
                     plan_date = st.date_input("訓練日期 Training Date", value=datetime.date.today(), key="log_plan_date")
                     duration_min = st.number_input("訓練總時長 (分鐘 min)", min_value=10, max_value=300, value=90, step=5, key="log_duration")
                 with c_p2:
-                    category = st.selectbox("訓練主題與類別", ["欄架技術 Hurdle Technique", "爆發力/重量 Explosive/Strength", "速耐力/心肺 Speed Endurance", "恢復/伸展 Recovery"], key="log_category")
+                    category = st.selectbox("訓練主題與類別", CATEGORY_OPTIONS, key="log_category")
                     rpe_feeling = st.select_slider("本體感覺 RPE", options=RPE_OPTIONS, value="5 中等", key="log_rpe")
 
                 st.markdown("---")
@@ -2703,7 +2904,7 @@ elif page == "課表紀錄 Training Plan":
                 with c_t2:
                     waketime = st.time_input("起床時間 Wake-up Time", value=datetime.time(6, 30), key="log_waketime")
 
-                # 第三列：2 等分睡眠總時長與恢復性睡眠比例（上方等高輔助標題，確保輸入框水平對齊）
+                # 第三列：2 等分睡眠總時長與恢復性睡眠比例
                 c_s1, c_s2 = st.columns(2, gap="medium")
                 with c_s1:
                     st.caption("昨夜睡眠總時長 Sleep Duration")
@@ -2723,27 +2924,32 @@ elif page == "課表紀錄 Training Plan":
                 injuries_input_data = []
                 to_delete_idx = None
                 for idx, item in enumerate(st.session_state["dyn_injuries"]):
-                    c_sel1, c_sel2, c_sel3, c_sel4 = st.columns([1.6, 1.2, 1.6, 1.1])
-                    with c_sel1:
-                        default_area_idx = BODY_PART_OPTIONS.index(item["area"]) if item["area"] in BODY_PART_OPTIONS else 0
-                        selected_area = st.selectbox(f"痛點部位 #{idx+1}", BODY_PART_OPTIONS, index=default_area_idx, key=f"sel_area_{idx}")
-                    with c_sel2:
-                        selected_lvl = st.slider(f"疼痛等級 (VAS 0-10)", 0, 10, item["level"], key=f"sel_lvl_{idx}")
-                        st.markdown("<br>", unsafe_allow_html=True)
-                        if st.button("刪除此痛點", key=f"del_inj_{idx}"):
-                            to_delete_idx = idx
-                    with c_sel3:
-                        default_pts = item.get("pain_types", [])
-                        if not isinstance(default_pts, list): default_pts = []
-                        st.markdown('<span class="pain-nature-anchor"></span>', unsafe_allow_html=True)
-                        selected_pain_types = st.multiselect(
-                            f"疼痛性質 (可多選)", 
-                            options=PAIN_NATURE_OPTIONS, 
-                            default=[p for p in default_pts if p in PAIN_NATURE_OPTIONS],
-                            key=f"sel_ptypes_{idx}"
+                    with st.container(border=True):
+                        c_sel1, c_sel2, c_sel3 = st.columns([1.5, 1.1, 1.6], gap="medium")
+                        with c_sel1:
+                            default_area_idx = BODY_PART_OPTIONS.index(item["area"]) if item["area"] in BODY_PART_OPTIONS else 0
+                            selected_area = st.selectbox(f"痛點部位 #{idx+1}", BODY_PART_OPTIONS, index=default_area_idx, key=f"sel_area_{idx}")
+                        with c_sel2:
+                            selected_lvl = st.slider(f"疼痛等級 (VAS 0-10)", 0, 10, item["level"], key=f"sel_lvl_{idx}")
+                            if st.button("刪除此痛點", key=f"del_inj_{idx}"):
+                                to_delete_idx = idx
+                        with c_sel3:
+                            default_pts = item.get("pain_types", [])
+                            if not isinstance(default_pts, list): default_pts = []
+                            st.markdown('<span class="pain-nature-anchor"></span>', unsafe_allow_html=True)
+                            selected_pain_types = st.multiselect(
+                                f"疼痛性質 (可多選)", 
+                                options=PAIN_NATURE_OPTIONS, 
+                                default=[p for p in default_pts if p in PAIN_NATURE_OPTIONS],
+                                key=f"sel_ptypes_{idx}"
+                            )
+                        selected_note = st.text_area(
+                            f"備註說明 #{idx+1}",
+                            value=item.get("notes", ""),
+                            height=95,
+                            placeholder="請輸入疼痛觸發動作、痠痛程度變化、冰敷/伸展處置等詳細說明...",
+                            key=f"sel_note_{idx}"
                         )
-                    with c_sel4:
-                        selected_note = st.text_input(f"備註說明", value=item.get("notes", ""), key=f"sel_note_{idx}")
 
                     injuries_input_data.append({
                         "id": idx + 1,
@@ -3135,4 +3341,3 @@ elif page == "歷史分析紀錄 History Records":
                                             st.caption("⚠️ 尚無分段數據明細 No split details found")
 
                         st.markdown("---")
-                    
