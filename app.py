@@ -27,6 +27,16 @@ def get_mime_type(filename):
     mime_type, _ = mimetypes.guess_type(filename)
     return mime_type if mime_type else "video/mp4"
 
+def calc_sleep_duration(bed_t, wake_t):
+    """依睡覺時間與起床時間自動計算睡眠時長（支援跨夜）"""
+    bed_m = bed_t.hour * 60 + bed_t.minute
+    wake_m = wake_t.hour * 60 + wake_t.minute
+    if wake_m < bed_m:
+        diff_m = (24 * 60 - bed_m) + wake_m
+    else:
+        diff_m = wake_m - bed_m
+    return diff_m // 60, diff_m % 60, round(diff_m / 60.0, 2)
+
 # -------------------- 【頁面與全站 CSS 配置】 --------------------
 st.set_page_config(page_title="HURDEX - 跨欄運動技術與防護分析系統", layout="wide", initial_sidebar_state="expanded")
 
@@ -1048,11 +1058,9 @@ elif page == "運動防護 Injury Care":
         team_code = u["team_code"]
         role = u["role"]
 
-        # 取得團隊所有訓練日誌並自動彙整傷病追蹤
         raw_plans = get_training_plans(team_code=team_code) if role in ["trainer", "coach"] else get_training_plans(username=u["username"], team_code=team_code)
         all_feedbacks = get_injury_feedbacks(team_code) if role in ["trainer", "coach"] else get_injury_feedbacks(team_code, athlete_username=u["username"])
 
-        # 建立 plan_id -> feedback 對應表
         feedback_by_plan = {}
         standalone_feedbacks = []
         for fb in all_feedbacks:
@@ -1062,7 +1070,6 @@ elif page == "運動防護 Injury Care":
             else:
                 standalone_feedbacks.append(fb)
 
-        # 整理選手訓練日誌中的傷病回報資料
         organized_injury_logs = []
         for p in reversed(raw_plans):
             p_id, p_user, p_date, p_cat, p_content, p_intensity, p_notes, p_created = p
@@ -1159,7 +1166,6 @@ elif page == "運動防護 Injury Care":
             if log_item["body_map_b64"]:
                 st.image(log_item["body_map_b64"], caption="選手標記痛點圖", width=240)
 
-        # ==================== 【防護員端：自動彙整與批改介面】 ====================
         if role == "trainer":
             tab_review, tab_manual = st.tabs(["📋 選手傷病日誌批改區", "➕ 獨立開立防護報告"])
 
@@ -1302,7 +1308,6 @@ elif page == "運動防護 Injury Care":
                             else:
                                 st.warning("請填寫部位與處置建議")
 
-        # ==================== 【選手端 / 教練端：檢視傷病批改回饋與討論】 ====================
         else:
             if role == "coach":
                 st.subheader("📋 團隊選手傷病追蹤與防護員批改總覽")
@@ -2803,12 +2808,15 @@ elif page == "課表紀錄 Training Plan":
 
         CATEGORY_OPTIONS = [
             "欄架技術 Hurdle Technique",
-            "起跑與上第一欄 Start & First Hurdle",
+            "欄架基本／輔助 Hurdle Drills & Auxiliary",
+            "起跑 Start",
             "欄間節奏與步頻 Inter-Hurdle Rhythm & Cadence",
             "最大速度 / 短衝衝刺 Max Velocity / Sprint",
             "專項速度耐力 Speed Endurance",
             "無氧 / 乳酸耐力 Anaerobic / Lactate Tolerance",
-            "爆發力 / 最大肌力重量 Explosive / Max Strength",
+            "間歇 Interval Training",
+            "阻力 Resistance Training",
+            "重量訓練 Weight Training",
             "增強式訓練 / 彈跳 Plyometrics",
             "核心與動力鏈穩定 Core & Kinetic Chain Stability",
             "跨欄柔軟度 / 髖關節活動度 Hurdle Mobility & Flexibility",
@@ -2905,7 +2913,17 @@ elif page == "課表紀錄 Training Plan":
                                 bedtime_str = parsed_notes.get('bedtime', '-')
                                 waketime_str = parsed_notes.get('waketime', '-')
                                 restorative_pct = parsed_notes.get('restorative_sleep_pct', None)
-                                restorative_str = f"`{restorative_pct}%`" if restorative_pct is not None else "`-`"
+                                if restorative_pct in [None, "", "未紀錄"]:
+                                    restorative_str = "`未紀錄`"
+                                else:
+                                    restorative_str = f"`{restorative_pct}%`"
+
+                                raw_hr = parsed_notes.get('resting_hr', '-')
+                                if raw_hr in [None, "", "未紀錄"]:
+                                    hr_str = "`未紀錄`"
+                                else:
+                                    hr_str = f"`{raw_hr} bpm`"
+
                                 period_str = parsed_notes.get('menstrual_period', '-')
 
                                 inj_list = parsed_notes.get("injuries_list", [])
@@ -2918,7 +2936,7 @@ elif page == "課表紀錄 Training Plan":
                                     st.write(f"• 疲勞指數：`{parsed_notes.get('fatigue_score', '-')}/10`")
                                     st.write(f"• 睡眠總時長：{sleep_str} ｜ 恢復性睡眠：{restorative_str}")
                                 with c_d3:
-                                    st.write(f"• 靜息心率：`{parsed_notes.get('resting_hr', '-')} bpm`")
+                                    st.write(f"• 靜息心率：{hr_str}")
                                     st.write(f"• 生理期紀錄：`{period_str}`")
 
                                 col_inj_text, col_inj_map = st.columns([1.2, 0.8])
@@ -3012,11 +3030,17 @@ elif page == "課表紀錄 Training Plan":
                                 edit_rpe = st.select_slider("本體感覺 RPE", options=rpe_opts, value=p_intensity, key=f"edit_rpe_{p_id}")
 
                             st.markdown("##### 2. 體能與恢復狀態 Recovery Status & Physiology")
+                            raw_edit_hr = p_dict.get("resting_hr", 65)
+                            init_hr_unrec = (raw_edit_hr in [None, "", "未紀錄"])
+                            init_hr_num = int(raw_edit_hr) if isinstance(raw_edit_hr, (int, float)) else 65
+
                             ec_r1, ec_r2, ec_r3 = st.columns(3, gap="medium")
                             with ec_r1:
                                 edit_fatigue = st.slider("身體疲勞指數 Fatigue (1–10)", 1, 10, int(p_dict.get("fatigue_score", 3)), key=f"edit_fatigue_{p_id}")
                             with ec_r2:
-                                edit_hr = st.number_input("靜息心率 Resting HR (bpm)", min_value=40, max_value=220, value=int(p_dict.get("resting_hr", 65)), key=f"edit_hr_{p_id}")
+                                edit_hr_unrec = st.toggle("靜息心率：未紀錄（未戴手錶）", value=init_hr_unrec, key=f"edit_hr_unrec_{p_id}")
+                                edit_hr_val = st.number_input("靜息心率 Resting HR (bpm)", min_value=40, max_value=220, value=init_hr_num, disabled=edit_hr_unrec, key=f"edit_hr_{p_id}")
+                                edit_hr = "未紀錄" if edit_hr_unrec else edit_hr_val
                             with ec_r3:
                                 init_period = p_dict.get("menstrual_period", "無")
                                 period_idx = 1 if init_period == "有" else 0
@@ -3028,18 +3052,21 @@ elif page == "課表紀錄 Training Plan":
                             with ec_t2:
                                 edit_waketime = st.time_input("起床時間 Wake-up Time", value=init_wake, key=f"edit_wake_{p_id}")
 
+                            edit_sleep_h, edit_sleep_m, edit_total_sleep = calc_sleep_duration(edit_bedtime, edit_waketime)
+
+                            raw_edit_rs = p_dict.get("restorative_sleep_pct", 45)
+                            init_rs_unrec = (raw_edit_rs in [None, "", "未紀錄"])
+                            init_rs_num = int(raw_edit_rs) if isinstance(raw_edit_rs, (int, float)) else 45
+
                             ec_s1, ec_s2 = st.columns(2, gap="medium")
                             with ec_s1:
-                                st.caption("昨夜睡眠總時長 Sleep Duration")
-                                ecs_h, ecs_m = st.columns(2, gap="small")
-                                with ecs_h:
-                                    edit_sleep_h = st.number_input("小時 (hr)", min_value=0, max_value=24, value=int(p_dict.get("sleep_hours", 7)), step=1, key=f"edit_sh_{p_id}")
-                                with ecs_m:
-                                    edit_sleep_m = st.number_input("分鐘 (min)", min_value=0, max_value=59, value=int(p_dict.get("sleep_mins", 30)), step=5, key=f"edit_sm_{p_id}")
-                                edit_total_sleep = edit_sleep_h + (edit_sleep_m / 60.0)
+                                st.caption("昨夜睡眠總時長 Sleep Duration（依睡覺與起床時間自動計算）")
+                                st.info(f"🛌 自動計算結果：**{edit_sleep_h} 小時 {edit_sleep_m} 分**（共 {edit_total_sleep} 小時）")
                             with ec_s2:
-                                st.caption("深層 / REM 恢復性睡眠比例")
-                                edit_rest_sleep = st.number_input("恢復性睡眠 Restorative Sleep (%)", min_value=0, max_value=100, value=int(p_dict.get("restorative_sleep_pct", 45)), step=1, key=f"edit_rs_{p_id}")
+                                st.caption("深層 / REM 恢復性睡眠比例（手錶偵測）")
+                                edit_rs_unrec = st.toggle("恢復性睡眠：未紀錄（未戴手錶）", value=init_rs_unrec, key=f"edit_rs_unrec_{p_id}")
+                                edit_rest_sleep_val = st.number_input("恢復性睡眠 Restorative Sleep (%)", min_value=0, max_value=100, value=init_rs_num, step=1, disabled=edit_rs_unrec, key=f"edit_rs_{p_id}")
+                                edit_rest_sleep = "未紀錄" if edit_rs_unrec else edit_rest_sleep_val
 
                             st.markdown("###### 傷害追蹤修正 Injury Tracking")
                             edit_injuries_list = st.session_state.get(edit_inj_key, [])
@@ -3202,7 +3229,9 @@ elif page == "課表紀錄 Training Plan":
                 with c_r1:
                     fatigue_score = st.slider("身體疲勞指數 Fatigue (1–10)", 1, 10, 3, key="log_fatigue")
                 with c_r2:
-                    resting_hr = st.number_input("靜息心率 Resting HR (bpm)", min_value=40, max_value=220, value=65, key="log_hr")
+                    hr_unrecorded = st.toggle("靜息心率：未紀錄（未戴手錶）", value=False, key="log_hr_unrec")
+                    resting_hr_val = st.number_input("靜息心率 Resting HR (bpm)", min_value=40, max_value=220, value=65, disabled=hr_unrecorded, key="log_hr")
+                    resting_hr = "未紀錄" if hr_unrecorded else resting_hr_val
                 with c_r3:
                     menstrual_period = st.radio("生理期紀錄 Menstrual Period", ["無", "有"], horizontal=True, key="log_menstrual")
 
@@ -3212,18 +3241,17 @@ elif page == "課表紀錄 Training Plan":
                 with c_t2:
                     waketime = st.time_input("起床時間 Wake-up Time", value=datetime.time(6, 30), key="log_waketime")
 
+                sleep_hours, sleep_mins, total_sleep_hr = calc_sleep_duration(bedtime, waketime)
+
                 c_s1, c_s2 = st.columns(2, gap="medium")
                 with c_s1:
-                    st.caption("昨夜睡眠總時長 Sleep Duration")
-                    cs_h, cs_m = st.columns(2, gap="small")
-                    with cs_h:
-                        sleep_hours = st.number_input("小時 (hr)", min_value=0, max_value=24, value=7, step=1, key="log_sleep_h")
-                    with cs_m:
-                        sleep_mins = st.number_input("分鐘 (min)", min_value=0, max_value=59, value=30, step=5, key="log_sleep_m")
-                    total_sleep_hr = sleep_hours + (sleep_mins / 60.0)
+                    st.caption("昨夜睡眠總時長 Sleep Duration（依睡覺與起床時間自動計算）")
+                    st.info(f"🛌 自動計算結果：**{sleep_hours} 小時 {sleep_mins} 分**（共 {total_sleep_hr} 小時）")
                 with c_s2:
-                    st.caption("深層 / REM 恢復性睡眠比例")
-                    restorative_sleep_pct = st.number_input("恢復性睡眠 Restorative Sleep (%)", min_value=0, max_value=100, value=45, step=1, key="log_restorative_sleep")
+                    st.caption("深層 / REM 恢復性睡眠比例（手錶偵測）")
+                    rs_unrecorded = st.toggle("恢復性睡眠：未紀錄（未戴手錶）", value=False, key="log_rs_unrec")
+                    restorative_sleep_val = st.number_input("恢復性睡眠 Restorative Sleep (%)", min_value=0, max_value=100, value=45, step=1, disabled=rs_unrecorded, key="log_restorative_sleep")
+                    restorative_sleep_pct = "未紀錄" if rs_unrecorded else restorative_sleep_val
 
                 st.markdown("<br>", unsafe_allow_html=True)
                 st.markdown("###### 傷害追蹤")
