@@ -2676,7 +2676,7 @@ elif page == "課表紀錄 Training Plan":
                 captured_body_map_img = st.text_area("body_map_img_b64", key="captured_body_map_img", label_visibility="collapsed")
 
                 st.markdown("##### 1. 基本訓練設定 Basic Plan Info")
-                c_p1, c_p2 = st.columns(2)
+                c_p1, c_p2 = st.columns(2, gap="medium")
                 with c_p1:
                     plan_date = st.date_input("訓練日期 Training Date", value=datetime.date.today(), key="log_plan_date")
                     duration_min = st.number_input("訓練總時長 (分鐘 min)", min_value=10, max_value=300, value=90, step=5, key="log_duration")
@@ -2686,27 +2686,36 @@ elif page == "課表紀錄 Training Plan":
 
                 st.markdown("---")
                 st.markdown("##### 2. 體能與恢復狀態 Recovery Status & Physiology")
-                c_r1, c_r2, c_r3 = st.columns([1.2, 1, 1])
+
+                # 第一列：3 等分生理與疲勞指標
+                c_r1, c_r2, c_r3 = st.columns(3, gap="medium")
                 with c_r1:
-                    fatigue_score = st.slider("身體疲勞指數 Fatigue (1-10)", 1, 10, 3, key="log_fatigue")
+                    fatigue_score = st.slider("身體疲勞指數 Fatigue (1–10)", 1, 10, 3, key="log_fatigue")
                 with c_r2:
-                    resting_hr = st.number_input("靜息心率 Heart Rate (bpm)", min_value=40, max_value=220, value=65, key="log_hr")
+                    resting_hr = st.number_input("靜息心率 Resting HR (bpm)", min_value=40, max_value=220, value=65, key="log_hr")
                 with c_r3:
                     menstrual_period = st.radio("生理期紀錄 Menstrual Period", ["無", "有"], horizontal=True, key="log_menstrual")
 
-                c_s1, c_s2, c_s3, c_s4 = st.columns([1, 1, 1.3, 1.1])
-                with c_s1:
+                # 第二列：2 等分作息時間
+                c_t1, c_t2 = st.columns(2, gap="medium")
+                with c_t1:
                     bedtime = st.time_input("睡覺時間 Bedtime", value=datetime.time(23, 0), key="log_bedtime")
-                with c_s2:
+                with c_t2:
                     waketime = st.time_input("起床時間 Wake-up Time", value=datetime.time(6, 30), key="log_waketime")
-                with c_s3:
-                    st.write("**昨夜睡眠總時長 Sleep Duration**")
-                    cs_h, cs_m = st.columns(2)
-                    with cs_h: sleep_hours = st.number_input("小時 hr", min_value=0, max_value=24, value=7, step=1, key="log_sleep_h")
-                    with cs_m: sleep_mins = st.number_input("分鐘 min", min_value=0, max_value=59, value=30, step=5, key="log_sleep_m")
+
+                # 第三列：2 等分睡眠總時長與恢復性睡眠比例（上方等高輔助標題，確保輸入框水平對齊）
+                c_s1, c_s2 = st.columns(2, gap="medium")
+                with c_s1:
+                    st.caption("昨夜睡眠總時長 Sleep Duration")
+                    cs_h, cs_m = st.columns(2, gap="small")
+                    with cs_h:
+                        sleep_hours = st.number_input("小時 (hr)", min_value=0, max_value=24, value=7, step=1, key="log_sleep_h")
+                    with cs_m:
+                        sleep_mins = st.number_input("分鐘 (min)", min_value=0, max_value=59, value=30, step=5, key="log_sleep_m")
                     total_sleep_hr = sleep_hours + (sleep_mins / 60.0)
-                with c_s4:
-                    restorative_sleep_pct = st.number_input("恢復性睡眠比例 Restorative Sleep (%)", min_value=0, max_value=100, value=45, step=1, key="log_restorative_sleep")
+                with c_s2:
+                    st.caption("深層 / REM 恢復性睡眠比例")
+                    restorative_sleep_pct = st.number_input("恢復性睡眠 Restorative Sleep (%)", min_value=0, max_value=100, value=45, step=1, key="log_restorative_sleep")
 
                 st.markdown("<br>", unsafe_allow_html=True)
                 st.markdown("###### 傷害追蹤")
@@ -3126,3 +3135,4 @@ elif page == "歷史分析紀錄 History Records":
                                             st.caption("⚠️ 尚無分段數據明細 No split details found")
 
                         st.markdown("---")
+                    
