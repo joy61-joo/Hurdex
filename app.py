@@ -203,21 +203,35 @@ def init_db():
 # -------------------- 【帳號與發訊認證 Logic】 --------------------
 def hash_password(password):
     return hashlib.sha256(password.encode('utf-8')).hexdigest()
-    
-def delete_user_account(username):
+
+def delete_user_account(username, password=None):
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute("DELETE FROM users WHERE username = %s", (username,))
-    c.execute("DELETE FROM records WHERE username = %s", (username,))
-    c.execute("DELETE FROM training_plans WHERE username = %s", (username,))
-    conn.commit()
-    c.close()
-    conn.close()
+    if password is not None:
+        c.execute("SELECT username FROM users WHERE username = %s AND password_hash = %s", (username, hash_password(password)))
+        if not c.fetchone():
+            c.close(); conn.close()
+            return False, "密碼驗證錯誤，無法註銷帳號"
 
-def register_user(username, password, role, team_code, email):
+    try:
+        c.execute("DELETE FROM records WHERE username = %s", (username,))
+        c.execute("DELETE FROM training_plans WHERE username = %s", (username,))
+        c.execute("DELETE FROM reset_tokens WHERE username = %s", (username,))
+        c.execute("DELETE FROM competitions WHERE username = %s", (username,))
+        c.execute("DELETE FROM injury_feedbacks WHERE athlete_username = %s OR trainer_username = %s", (username, username))
+        c.execute("DELETE FROM users WHERE username = %s", (username,))
+        conn.commit()
+        c.close(); conn.close()
+        return True, "帳號及相關資料已永久註銷"
+    except Exception as e:
+        c.close(); conn.close()
+        return False, f"註銷失敗: {str(e)}"
+
+def register_user(username, password, role, team_code, email, is_new_team=False):
     username = username.strip()
     team_code = team_code.strip().upper()
     if not username: return False, "使用者名稱不可為空"
+    if not password: return False, "密碼不可為空"
     if not team_code: return False, "團隊碼不可為空"
 
     conn = get_db_connection()
@@ -227,6 +241,12 @@ def register_user(username, password, role, team_code, email):
         c.close(); conn.close()
         return False, "該使用者名稱已被註冊"
 
+    if not is_new_team:
+        c.execute("SELECT 1 FROM users WHERE team_code = %s LIMIT 1", (team_code,))
+        if not c.fetchone():
+            c.close(); conn.close()
+            return False, f"找不到團隊碼「{team_code}」，請確認是否輸入正確，或改選「建立新團隊」"
+
     try:
         pw_hash = hash_password(password)
         now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -234,7 +254,8 @@ def register_user(username, password, role, team_code, email):
                   (username, pw_hash, role, team_code, email, now_str))
         conn.commit()
         c.close(); conn.close()
-        return True, f"註冊成功！已加入團隊：{team_code}"
+        action_text = "已建立並加入新團隊" if is_new_team else "已成功加入團隊"
+        return True, f"註冊成功！{action_text}：{team_code}"
     except Exception as e:
         c.close(); conn.close()
         return False, f"註冊失敗: {str(e)}"
@@ -646,28 +667,61 @@ if page == "系統首頁 Home":
             r_pass = st.text_input("密碼 Password", type="password", key="r_pass")
             r_email = st.text_input("電子信箱 Email", key="r_email")
             r_role = st.selectbox("身分 Role", ["player", "coach", "trainer"], format_func=lambda x: {"player": "選手 Athlete", "coach": "教練 Coach", "trainer": "運動防護員 Trainer"}[x], key="r_role")
-            
-            r_team = ""
+
+            role_verified = True
             if r_role == "coach":
-                gen_team = generate_random_team_code()
                 c_code = st.text_input("請輸入教練專用邀請碼 (預設: 09290808)", key="r_ccode")
                 if c_code == COACH_SECRET_CODE:
-                    st.success(f"教練權限核可！系統自動為您生成新團隊碼：{gen_team}")
-                    r_team = gen_team
+                    st.success("教練權限核可！")
                 else:
-                    st.warning("請輸入正確的教練邀請碼以生成團隊碼")
+                    role_verified = False
+                    st.warning("請輸入正確的教練邀請碼以驗證教練身分")
             elif r_role == "trainer":
-                t_code = st.text_input("請輸入防護員專用邀請碼", key="r_tcode")
-                r_team = st.text_input("請輸入要加入的團隊碼 Team Code", key="r_team_t")
+                t_code = st.text_input("請輸入防護員專用邀請碼 (預設: trainer2026)", key="r_tcode")
+                if t_code == TRAINER_SECRET_CODE:
+                    st.success("運動防護員權限核可！")
+                else:
+                    role_verified = False
+                    st.warning("請輸入正確的防護員邀請碼以驗證防護員身分")
+
+            st.markdown("**團隊設定 Team Setup**")
+            team_mode = st.radio(
+                "請選擇團隊加入方式（三方皆可建立新團隊或加入既有團隊）：",
+                ["建立新團隊 (自動產生團隊碼)", "加入既有團隊 (輸入團隊碼)"],
+                horizontal=True,
+                key="r_team_mode"
+            )
+
+            is_new_team = (team_mode == "建立新團隊 (自動產生團隊碼)")
+            r_team = ""
+
+            if is_new_team:
+                if "reg_new_team_code" not in st.session_state:
+                    st.session_state["reg_new_team_code"] = generate_random_team_code()
+
+                col_tc1, col_tc2 = st.columns([3, 1])
+                with col_tc1:
+                    st.info(f"系統已為您配置專屬新團隊碼：**`{st.session_state['reg_new_team_code']}`**（註冊後可分享給團隊成員加入）")
+                with col_tc2:
+                    if st.button("🔄 換一組代碼", key="btn_refresh_team_code", use_container_width=True):
+                        st.session_state["reg_new_team_code"] = generate_random_team_code()
+                        st.rerun()
+
+                r_team = st.session_state["reg_new_team_code"]
             else:
-                r_team = st.text_input("請輸入團隊碼 Team Code (由教練提供)", key="r_team_p")
+                r_team = st.text_input("請輸入團隊碼 Team Code (由團隊建立者提供)", key="r_team_join")
 
             if st.button("確認註冊 Register", key="btn_reg", use_container_width=True):
-                if r_role == "coach" and st.session_state.get("r_ccode") != COACH_SECRET_CODE:
-                    st.error("教練邀請碼錯誤！")
+                if not role_verified:
+                    if r_role == "coach":
+                        st.error("教練邀請碼錯誤！")
+                    elif r_role == "trainer":
+                        st.error("防護員邀請碼錯誤！")
                 else:
-                    ok, msg = register_user(r_user, r_pass, r_role, r_team, r_email)
+                    ok, msg = register_user(r_user, r_pass, r_role, r_team, r_email, is_new_team=is_new_team)
                     if ok:
+                        if is_new_team and "reg_new_team_code" in st.session_state:
+                            del st.session_state["reg_new_team_code"]
                         st.success(msg)
                     else:
                         st.error(msg)
@@ -689,7 +743,7 @@ if page == "系統首頁 Home":
                 else: st.error(msg)
     else:
         u = st.session_state["user_info"]
-        st.success(f"🎉 歡迎使用 HURDEX 運科系統，{u['username']}！您的團隊碼為：`{u['team_code']}`")
+        st.success(f"🎉 歡迎使用 HURDEX 運科系統，{u['username']}！您的團隊碼為：`{u['team_code']}`（可提供給團隊成員註冊加入）")
         
         c1, c2, c3 = st.columns(3)
         with c1:
@@ -698,6 +752,43 @@ if page == "系統首頁 Home":
             st.info("⏱️ **欄間秒數與速度**\n\n打點紀錄起跑至過欄耗時，自動計算分段速度。")
         with c3:
             st.info("🩺 **防護與訓練日誌**\n\n紀錄身體痛點、疲勞度 RPE 與防護員復健建議。")
+
+        st.markdown("---")
+        with st.expander("⚙️ 帳號設定與註銷 Account Settings & Delete Account"):
+            tab_chg_pw, tab_del_acc = st.tabs(["🔑 修改密碼 Change Password", "⚠️ 註銷帳號 Delete Account"])
+
+            with tab_chg_pw:
+                with st.form("form_change_pw"):
+                    old_pw_input = st.text_input("請輸入目前密碼 Current Password", type="password")
+                    new_pw_input = st.text_input("請輸入新密碼 New Password", type="password")
+                    new_pw_confirm = st.text_input("再次確認新密碼 Confirm New Password", type="password")
+                    if st.form_submit_button("更新密碼 Update Password", use_container_width=True):
+                        if new_pw_input != new_pw_confirm:
+                            st.error("兩次輸入的新密碼不一致")
+                        else:
+                            ok, msg = update_password(u["username"], old_pw_input, new_pw_input)
+                            if ok:
+                                st.success(msg)
+                            else:
+                                st.error(msg)
+
+            with tab_del_acc:
+                st.warning("⚠️ **危險操作提醒**：註銷帳號後，您的個人帳號資料、所有訓練課表日誌與歷史分析紀錄將會永久刪除且無法復原。")
+                del_pw_confirm = st.text_input("請輸入帳號密碼以確認身分 Password Confirmation", type="password", key="del_acc_pw")
+                del_chk = st.checkbox("我已了解註銷後資料將永久刪除，確認要註銷此帳號", key="del_acc_chk")
+                if st.button("🗑️ 永久註銷帳號 Permanently Delete Account", key="btn_delete_account"):
+                    if not del_chk:
+                        st.error("請先勾選確認註銷方塊")
+                    elif not del_pw_confirm:
+                        st.error("請輸入密碼以驗證身分")
+                    else:
+                        ok, msg = delete_user_account(u["username"], password=del_pw_confirm)
+                        if ok:
+                            st.session_state["user_info"] = None
+                            st.success(msg)
+                            st.rerun()
+                        else:
+                            st.error(msg)
 
 # ==================== 【頁面 2：運動防護與傷勢評估】 ====================
 elif page == "運動防護與傷勢評估 Injury & Defense Feedback":
