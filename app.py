@@ -49,13 +49,19 @@ st.markdown("""
         border: 1px solid #cbd5e1 !important; border-radius: 6px !important;
     }
     div[data-testid="stExpander"] { background-color: #ffffff !important; border: 1px solid #e2e8f0 !important; border-radius: 8px !important; }
-    div[data-testid="stMultiSelect"]:has(input[aria-label*="疼痛性質"]) [data-baseweb="tag"] {
+    [data-testid="stElementContainer"]:has(.pain-nature-anchor),
+    .element-container:has(.pain-nature-anchor) {
+        display: none !important;
+    }
+    [data-testid="stElementContainer"]:has(.pain-nature-anchor) + [data-testid="stElementContainer"] [data-baseweb="tag"],
+    .element-container:has(.pain-nature-anchor) + .element-container [data-baseweb="tag"] {
         background-color: #dc2626 !important;
         color: #ffffff !important;
         border-radius: 6px !important;
         border: none !important;
     }
-    div[data-testid="stMultiSelect"]:has(input[aria-label*="疼痛性質"]) [data-baseweb="tag"] * {
+    [data-testid="stElementContainer"]:has(.pain-nature-anchor) + [data-testid="stElementContainer"] [data-baseweb="tag"] *,
+    .element-container:has(.pain-nature-anchor) + .element-container [data-baseweb="tag"] * {
         color: #ffffff !important;
         fill: #ffffff !important;
     }
@@ -2207,7 +2213,7 @@ elif page == "課表紀錄 Training Plan":
                                         ptypes_badges = ""
                                         if ptypes:
                                             badges_html = " ".join([
-                                                f'<span style="background-color:#dc2626; color:#ffffff; padding:2px 7px; border-radius:4px; font-size:12px; font-weight:600;">{pt}</span>'
+                                                f'<span style="background-color:#dc2626; color:#ffffff !important; padding:2px 7px; border-radius:4px; font-size:12px; font-weight:600;">{pt}</span>'
                                                 for pt in ptypes
                                             ])
                                             ptypes_badges = f" ｜ 性質：{badges_html}"
@@ -2403,6 +2409,7 @@ elif page == "課表紀錄 Training Plan":
                     with c_sel3:
                         default_pts = item.get("pain_types", [])
                         if not isinstance(default_pts, list): default_pts = []
+                        st.markdown('<span class="pain-nature-anchor"></span>', unsafe_allow_html=True)
                         selected_pain_types = st.multiselect(
                             f"疼痛性質 (可多選)", 
                             options=PAIN_NATURE_OPTIONS, 
