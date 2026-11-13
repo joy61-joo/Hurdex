@@ -4433,18 +4433,22 @@ elif page == "體重監控 Weight Monitoring":
 
                         if ev.get("water_note"):
                             st.info(ev["water_note"])
-
 # ==================== 【頁面 9：歷史分析紀錄】 ====================
 elif page == "歷史分析紀錄 History Records":
-    st.title("團隊歷史分析資料庫 Team Historical Analysis Records")
-    st.markdown("---")
-
     if st.session_state["user_info"] is None:
+        st.title("歷史分析資料庫 Historical Analysis Records")
+        st.markdown("---")
         st.warning("請先登入帳號")
     else:
         u = st.session_state["user_info"]
         team_code = u["team_code"]
         role = u["role"]
+
+        if role in ["coach", "trainer"]:
+            st.title("團隊歷史分析資料庫 Team Historical Analysis Records")
+        else:
+            st.title("歷史分析資料庫 Historical Analysis Records")
+        st.markdown("---")
 
         if role in ["coach", "trainer"]:
             team_athletes = get_team_athletes(team_code)
@@ -4459,7 +4463,7 @@ elif page == "歷史分析紀錄 History Records":
         else:
             for r in records:
                 r_id, r_user, r_mod, r_title, r_details_json, r_time = r
-                with st.expander(f"[{r_time}] 選手: {r_user} ｜ {r_mod} - {r_title}"):
+                with st.expander(f"{r_mod} - {r_title}"):
                     try:
                         details = json.loads(r_details_json)
 
@@ -4484,7 +4488,18 @@ elif page == "歷史分析紀錄 History Records":
                         if "timer_metrics" in details:
                             tm = details["timer_metrics"]
                             st.write(f"• **總累積耗時**：`{tm.get('total_time')} 秒`")
-                            st.table(pd.DataFrame(tm.get("splits", [])))
+                            splits_data = tm.get("splits", [])
+                            if splits_data:
+                                df_splits = pd.DataFrame(splits_data).rename(columns={
+                                    "segment": "階段",
+                                    "cum_sec": "累積時間 (秒)",
+                                    "split_sec": "單段耗時 (秒)",
+                                    "speed_ms": "平均速度 (m/s)"
+                                })
+                                col_order = ["階段", "累積時間 (秒)", "單段耗時 (秒)", "平均速度 (m/s)"]
+                                existing_cols = [c for c in col_order if c in df_splits.columns]
+                                other_cols = [c for c in df_splits.columns if c not in existing_cols]
+                                st.table(df_splits[existing_cols + other_cols])
 
                         if details.get("ai_diagnosis"):
                             st.markdown("**🤖 AI 跨欄動作生物力學診斷建議：**")
