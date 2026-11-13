@@ -918,18 +918,30 @@ def save_record(*args, **kwargs):
     conn.commit()
     c.close()
     conn.close()
-
-def get_record_folders(team_code):
+def get_record_folders(team_code, username=None):
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute("SELECT folder_name FROM record_folders WHERE team_code = %s ORDER BY id ASC", (team_code,))
-    folder_rows = [r[0] for r in c.fetchall()]
-    c.execute("""
-        SELECT DISTINCT folder_name FROM records
-        WHERE (team_code = %s OR username IN (SELECT username FROM users WHERE team_code = %s))
-          AND folder_name IS NOT NULL AND folder_name != '' AND folder_name != '未分類'
-    """, (team_code, team_code))
-    rec_folders = [r[0] for r in c.fetchall()]
+    if username:
+        c.execute(
+            "SELECT folder_name FROM record_folders WHERE team_code = %s AND username = %s ORDER BY id ASC",
+            (team_code, username)
+        )
+        folder_rows = [r[0] for r in c.fetchall()]
+        c.execute("""
+            SELECT DISTINCT folder_name FROM records
+            WHERE team_code = %s AND username = %s
+              AND folder_name IS NOT NULL AND folder_name != '' AND folder_name != '未分類'
+        """, (team_code, username))
+        rec_folders = [r[0] for r in c.fetchall()]
+    else:
+        c.execute("SELECT folder_name FROM record_folders WHERE team_code = %s ORDER BY id ASC", (team_code,))
+        folder_rows = [r[0] for r in c.fetchall()]
+        c.execute("""
+            SELECT DISTINCT folder_name FROM records
+            WHERE (team_code = %s OR username IN (SELECT username FROM users WHERE team_code = %s))
+              AND folder_name IS NOT NULL AND folder_name != '' AND folder_name != '未分類'
+        """, (team_code, team_code))
+        rec_folders = [r[0] for r in c.fetchall()]
     c.close()
     conn.close()
 
@@ -945,7 +957,7 @@ def create_record_folder(team_code, username, folder_name):
         return False, "資料夾名稱不可為空"
     if folder_name in ("全部紀錄", "未分類"):
         return False, "此為系統保留名稱，請使用其他名稱"
-    if folder_name in get_record_folders(team_code):
+    if folder_name in get_record_folders(team_code, username=username):
         return False, f"資料夾「{folder_name}」已存在"
 
     conn = get_db_connection()
@@ -968,37 +980,41 @@ def move_record_to_folder(record_id, folder_name):
     c.close()
     conn.close()
 
-def rename_record_folder(team_code, old_name, new_name):
+def rename_record_folder(team_code, username, old_name, new_name):
     new_name = new_name.strip()
     if not new_name or new_name in ("全部紀錄", "未分類"):
         return False, "新資料夾名稱無效或為系統保留名稱"
     if old_name == new_name:
         return False, "名稱未變更"
-    if new_name in get_record_folders(team_code):
+    if new_name in get_record_folders(team_code, username=username):
         return False, f"資料夾「{new_name}」已存在"
 
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute("UPDATE record_folders SET folder_name = %s WHERE team_code = %s AND folder_name = %s", (new_name, team_code, old_name))
-    c.execute("""
-        UPDATE records SET folder_name = %s
-        WHERE (team_code = %s OR username IN (SELECT username FROM users WHERE team_code = %s))
-          AND folder_name = %s
-    """, (new_name, team_code, team_code, old_name))
+    c.execute(
+        "UPDATE record_folders SET folder_name = %s WHERE team_code = %s AND username = %s AND folder_name = %s",
+        (new_name, team_code, username, old_name)
+    )
+    c.execute(
+        "UPDATE records SET folder_name = %s WHERE team_code = %s AND username = %s AND folder_name = %s",
+        (new_name, team_code, username, old_name)
+    )
     conn.commit()
     c.close()
     conn.close()
     return True, f"已重新命名為「{new_name}」"
 
-def delete_record_folder(team_code, folder_name):
+def delete_record_folder(team_code, username, folder_name):
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute("DELETE FROM record_folders WHERE team_code = %s AND folder_name = %s", (team_code, folder_name))
-    c.execute("""
-        UPDATE records SET folder_name = '未分類'
-        WHERE (team_code = %s OR username IN (SELECT username FROM users WHERE team_code = %s))
-          AND folder_name = %s
-    """, (team_code, team_code, folder_name))
+    c.execute(
+        "DELETE FROM record_folders WHERE team_code = %s AND username = %s AND folder_name = %s",
+        (team_code, username, folder_name)
+    )
+    c.execute(
+        "UPDATE records SET folder_name = '未分類' WHERE team_code = %s AND username = %s AND folder_name = %s",
+        (team_code, username, folder_name)
+    )
     conn.commit()
     c.close()
     conn.close()
@@ -1132,7 +1148,27 @@ def delete_training_plan(plan_id):
     c.execute("DELETE FROM training_plans WHERE id = %s", (plan_id,))
     conn.commit()
     c.close(); conn.close()
+def save_training_plan_coach_feedback(plan_id, existing_notes_str, coach_username, feedback_text):
+    try:
+        notes_dict = json.loads(existing_notes_str) if existing_notes_str else {}
+        if not isinstance(notes_dict, dict):
+            notes_dict = {"user_notes": str(existing_notes_str)}
+    except Exception:
+        notes_dict = {"user_notes": str(existing_notes_str)} if existing_notes_str else {}
 
+    notes_dict["coach_feedback"] = feedback_text.strip()
+    notes_dict["coach_feedback_by"] = coach_username
+    notes_dict["coach_feedback_at"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute(
+        "UPDATE training_plans SET notes = %s WHERE id = %s",
+        (json.dumps(notes_dict, ensure_ascii=False), plan_id)
+    )
+    conn.commit()
+    c.close()
+    conn.close()
 # -------------------- 【體重監控與目標資料庫操作】 --------------------
 def upsert_weight_goal(username, team_code, start_weight, start_date, target_weight, target_date, goal_notes=""):
     conn = get_db_connection()
@@ -2544,7 +2580,7 @@ elif page == "角度分析 Angle Analysis":
 
                 if st.session_state["user_info"]:
                     u_curr = st.session_state["user_info"]
-                    angle_folder_opts = ["未分類"] + get_record_folders(u_curr["team_code"])
+                    angle_folder_opts = ["未分類"] + get_record_folders(u_curr["team_code"], username=u_curr["username"])
                     with st.form("save_angle_form"):
                         rec_title_angle = st.text_input("紀錄名稱", value=f"動作關鍵影格角度量測 {uploaded_file.name}")
                         sel_folder_angle = st.selectbox("存入資料夾 Folder", angle_folder_opts)
@@ -2758,7 +2794,7 @@ elif page == "角度分析 Angle Analysis":
 
                     if st.session_state["user_info"]:
                         u_curr_t = st.session_state["user_info"]
-                        timer_folder_opts = ["未分類"] + get_record_folders(u_curr_t["team_code"])
+                        timer_folder_opts = ["未分類"] + get_record_folders(u_curr_t["team_code"], username=u_curr_t["username"])
                         with st.form("save_timer_form"):
                             rec_title_timer = st.text_input("紀錄名稱", value=f"欄間秒數及速度計算 {uploaded_file.name}")
                             sel_folder_timer = st.selectbox("存入資料夾 Folder", timer_folder_opts)
@@ -3256,7 +3292,7 @@ elif page == "雙影同步 Dual Video Sync":
 
             if st.session_state["user_info"]:
                 u_curr_d = st.session_state["user_info"]
-                dual_folder_opts = ["未分類"] + get_record_folders(u_curr_d["team_code"])
+                dual_folder_opts = ["未分類"] + get_record_folders(u_curr_d["team_code"], username=u_curr_d["username"])
                 with st.form("save_dual_angle_form"):
                     rec_title_dual = st.text_input("紀錄名稱", value=f"雙影角度對比 {file_a.name} vs {file_b.name}")
                     sel_folder_dual = st.selectbox("存入資料夾 Folder", dual_folder_opts)
@@ -3548,8 +3584,7 @@ elif page == "課表紀錄 Training Plan":
             "物理治療 / 傷後復健 Rehab & Prehab",
             "測驗與模擬賽 Time Trial / Competition Simulation"
         ]
-
-        def render_training_log_history():
+def render_training_log_history():
             st.subheader("團隊訓練課表與日誌歷史檔案 Team Training Log Archive" if is_staff else "訓練課表與日誌歷史檔案 Training Log Archive")
             if is_staff:
                 team_athletes = get_team_athletes(user["team_code"])
@@ -3572,56 +3607,68 @@ elif page == "課表紀錄 Training Plan":
             if not plans:
                 st.warning("尚無訓練日誌紀錄 No Training Log Records")
             else:
-                st.markdown("##### 部位疼痛指數復原趨勢圖 Pain Score Recovery Trend")
+                # 只有在「點選特定選手」時才顯示部位疼痛指數復原趨勢圖
+                if query_user is not None:
+                    st.markdown("##### 部位疼痛指數復原趨勢圖 Pain Score Recovery Trend")
 
-                pain_rows = []
-                for p in plans:
-                    p_date = p[2]
-                    try:
-                        parsed = json.loads(p[6])
-                        inj_list = parsed.get("injuries_list", [])
-                        for inj in inj_list:
-                            area = inj.get("area", f"部位 #{inj.get('id',1)}")
-                            lvl = inj.get("level", 0)
-                            pain_rows.append({"Date": p_date, "BodyArea": area, "PainLevel": int(lvl)})
-                    except Exception:
-                        continue
+                    pain_rows = []
+                    for p in plans:
+                        p_date = p[2]
+                        try:
+                            parsed = json.loads(p[6])
+                            inj_list = parsed.get("injuries_list", [])
+                            for inj in inj_list:
+                                area = inj.get("area", f"部位 #{inj.get('id',1)}")
+                                lvl = inj.get("level", 0)
+                                pain_rows.append({"Date": p_date, "BodyArea": area, "PainLevel": int(lvl)})
+                        except Exception:
+                            continue
 
-                if pain_rows:
-                    df_pain_raw = pd.DataFrame(pain_rows)
-                    df_pain_agg = df_pain_raw.groupby(['Date', 'BodyArea'], as_index=False)['PainLevel'].last()
-                    pain_chart = alt.Chart(df_pain_agg).mark_line(point=True).encode(
-                        x=alt.X('Date:N', title='訓練日期 Date', sort='ascending'),
-                        y=alt.Y('PainLevel:Q', title='疼痛 VAS', scale=alt.Scale(domain=[0, 10])),
-                        color=alt.Color('BodyArea:N', title='疼痛部位'),
-                        tooltip=[
-                            alt.Tooltip('Date:N', title='日期'),
-                            alt.Tooltip('BodyArea:N', title='部位'),
-                            alt.Tooltip('PainLevel:Q', title='疼痛 VAS')
-                        ]
-                    ).properties(height=340)
-                    st.altair_chart(pain_chart, use_container_width=True)
+                    if pain_rows:
+                        df_pain_raw = pd.DataFrame(pain_rows)
+                        df_pain_agg = df_pain_raw.groupby(['Date', 'BodyArea'], as_index=False)['PainLevel'].last()
+                        pain_chart = alt.Chart(df_pain_agg).mark_line(point=True).encode(
+                            x=alt.X('Date:N', title='訓練日期 Date', sort='ascending'),
+                            y=alt.Y('PainLevel:Q', title='疼痛 VAS', scale=alt.Scale(domain=[0, 10])),
+                            color=alt.Color('BodyArea:N', title='疼痛部位'),
+                            tooltip=[
+                                alt.Tooltip('Date:N', title='日期'),
+                                alt.Tooltip('BodyArea:N', title='部位'),
+                                alt.Tooltip('PainLevel:Q', title='疼痛 VAS')
+                            ]
+                        ).properties(height=340)
+                        st.altair_chart(pain_chart, use_container_width=True)
+                    else:
+                        st.caption("尚無傷病追蹤數據可繪製趨勢圖 No Injury Data for Line Chart")
                 else:
-                    st.caption("尚無傷病追蹤數據可繪製趨勢圖 No Injury Data for Line Chart")
+                    st.caption("💡 請在上方「篩選選手」點選單一選手，即可顯示該選手的部位疼痛指數復原趨勢圖。")
 
                 st.markdown("---")
                 
                 for p in reversed(plans):
                     p_id, p_user, p_date, p_cat, p_content, p_intensity, p_notes, p_created = p
                     parsed_notes = None
-                    try: parsed_notes = json.loads(p_notes)
-                    except Exception: parsed_notes = None
+                    try:
+                        parsed_notes = json.loads(p_notes)
+                    except Exception:
+                        parsed_notes = None
+
+                    coach_fb = parsed_notes.get("coach_feedback", "") if isinstance(parsed_notes, dict) else ""
+                    coach_fb_by = parsed_notes.get("coach_feedback_by", "") if isinstance(parsed_notes, dict) else ""
+                    coach_fb_at = parsed_notes.get("coach_feedback_at", "") if isinstance(parsed_notes, dict) else ""
+                    fb_badge = " ｜ 💬 教練已回饋" if coach_fb else ""
 
                     if is_staff:
-                        expander_title = f"日期 Date: {p_date} ｜ 選手 Athlete: {p_user} ｜ 類別: {p_cat} ｜ RPE: {p_intensity}"
+                        expander_title = f"日期 Date: {p_date} ｜ 選手 Athlete: {p_user} ｜ 類別: {p_cat} ｜ RPE: {p_intensity}{fb_badge}"
                     else:
-                        expander_title = f"日期 Date: {p_date} ｜ {p_cat}"
+                        expander_title = f"日期 Date: {p_date} ｜ {p_cat}{fb_badge}"
 
                     with st.expander(expander_title):
                         edit_mode_key = f"editing_plan_{p_id}"
                         edit_inj_key = f"edit_injuries_{p_id}"
-                        is_editing = st.session_state.get(edit_mode_key, False)
-                        can_modify = (is_staff or p_user == user["username"])
+                        # 防護員 (trainer) 沒有編輯和修改訓練日誌的權限
+                        can_modify = (role != "trainer") and (is_staff or p_user == user["username"])
+                        is_editing = st.session_state.get(edit_mode_key, False) and can_modify
 
                         if not is_editing:
                             if not is_staff:
@@ -3696,9 +3743,35 @@ elif page == "課表紀錄 Training Plan":
                                 st.markdown(f"**課表細節：**\n```text\n{p_content}\n```")
                                 u_notes = parsed_notes.get("user_notes", "")
                                 if u_notes:
-                                    st.markdown(f"**動作感覺與教練叮嚀：**\n```text\n{u_notes}\n```")
+                                    st.markdown(f"**動作感覺與自主備註：**\n```text\n{u_notes}\n```")
                             else:
                                 st.markdown(f"**課表細節 Details：**\n```text\n{p_content}\n```")
+
+                            # 顯示教練回饋（選手、教練、防護員皆可檢視）
+                            if coach_fb:
+                                meta_str = f"（教練：{coach_fb_by} ｜ {coach_fb_at}）" if coach_fb_by else ""
+                                st.markdown(f"""
+                                    <div style="background:#eff6ff; border:1px solid #bfdbfe; border-left:4px solid #2563eb; border-radius:6px; padding:10px 14px; margin-top:8px; margin-bottom:8px;">
+                                        <div style="font-size:13px; font-weight:700; color:#1d4ed8; margin-bottom:4px;">💬 教練回饋 Coach Feedback {meta_str}</div>
+                                        <div style="font-size:14px; color:#0f172a; white-space:pre-wrap;">{coach_fb}</div>
+                                    </div>
+                                """, unsafe_allow_html=True)
+
+                            # 教練專屬回饋撰寫與更新區塊
+                            if role == "coach":
+                                st.markdown("---")
+                                st.markdown("##### 💬 教練日誌回饋 Coach Feedback")
+                                new_coach_fb = st.text_area(
+                                    "輸入給選手的課表指導與回饋建議：",
+                                    value=coach_fb,
+                                    height=90,
+                                    placeholder="請輸入針對今日訓練內容、疲勞狀態或動作調整的回饋...",
+                                    key=f"coach_fb_inp_{p_id}"
+                                )
+                                if st.button("💾 儲存教練回饋 Save Coach Feedback", key=f"btn_save_coach_fb_{p_id}"):
+                                    save_training_plan_coach_feedback(p_id, p_notes, user["username"], new_coach_fb)
+                                    st.success("教練回饋已成功儲存並同步給選手！")
+                                    st.rerun()
 
                             if can_modify:
                                 st.markdown("---")
@@ -3844,7 +3917,7 @@ elif page == "課表紀錄 Training Plan":
                             st.markdown("##### 3. 課表內容與自主備註 Plan Details & Notes")
                             edit_content = st.text_area("課表細節與組數規劃 Plan Details & Sets", value=p_content, height=120, key=f"edit_content_{p_id}")
                             init_u_notes = p_dict.get("user_notes", "") if parsed_notes is not None else (p_notes or "")
-                            edit_u_notes = st.text_area("動作感覺與教練叮嚀 Notes & Feedback", value=init_u_notes, height=85, key=f"edit_unotes_{p_id}")
+                            edit_u_notes = st.text_area("動作感覺與自主備註 Notes", value=init_u_notes, height=85, key=f"edit_unotes_{p_id}")
 
                             sb_c1, sb_c2, _ = st.columns([1.2, 1.2, 2.6])
                             with sb_c1:
@@ -3864,7 +3937,10 @@ elif page == "課表紀錄 Training Plan":
                                             "menstrual_period": edit_period,
                                             "injuries_list": updated_injuries_data,
                                             "body_map_img_b64": p_dict.get("body_map_img_b64", ""),
-                                            "user_notes": edit_u_notes
+                                            "user_notes": edit_u_notes,
+                                            "coach_feedback": p_dict.get("coach_feedback", ""),
+                                            "coach_feedback_by": p_dict.get("coach_feedback_by", ""),
+                                            "coach_feedback_at": p_dict.get("coach_feedback_at", "")
                                         }
                                         update_training_plan(
                                             p_id,
@@ -4317,19 +4393,17 @@ elif page == "體重監控 Weight Monitoring":
                 latest_only = logs_rows[-1]
                 st.info(f"⚖️ 目前最新體重紀錄：**{float(latest_only[3]):.1f} kg**（測量日：`{latest_only[2]}`）。尚未設定目標體重，建議先至「🎯 目標體重與速率安全規劃」設定目標！")
                 st.markdown("---")
-
+            
             if not is_staff:
-                tab_wm_log, tab_wm_goal, tab_wm_chart, tab_wm_lit = st.tabs([
+                tab_wm_log, tab_wm_goal, tab_wm_chart = st.tabs([
                     "📝 每日體重測量登錄",
                     "🎯 目標體重與速率安全規劃",
-                    "📈 體重趨勢與目標軌跡圖",
-                    "📚 運動醫學文獻依據"
+                    "📈 體重趨勢與目標軌跡圖"
                 ])
             else:
-                tab_wm_chart, tab_wm_goal, tab_wm_lit = st.tabs([
+                tab_wm_chart, tab_wm_goal = st.tabs([
                     "📈 選手體重趨勢與歷史明細",
-                    "🎯 選手體重目標與速率評估",
-                    "📚 運動醫學文獻依據"
+                    "🎯 選手體重目標與速率評估"
                 ])
                 tab_wm_log = None
 
@@ -4486,28 +4560,6 @@ elif page == "體重監控 Weight Monitoring":
                     })
                     st.dataframe(disp_df, use_container_width=True, hide_index=True)
 
-            with tab_wm_lit:
-                st.subheader("📚 運動醫學與競技體重監控文獻依據")
-                st.markdown("""
-                本模組之體重速率評估、單日水分波動提醒與競技狀態判讀，係依據下列國際運動醫學與田徑營養學共識建立：
-
-                1. **安全減重速率與瘦體組織保留（0.5% – 0.7% 體重/週）**
-                   * **文獻**：*Garthe, I., Raastad, T., Refsnes, P. E., Koivisto, A., & Sundgot-Borgen, J. (2011).* Effect of two different weight-loss rates on body composition and strength and power-related performance in elite athletes. *International Journal of Sport Nutrition and Exercise Metabolism*, 21(2), 97–104.
-                   * **核心結論**：菁英運動員採用較慢速減重（約 **0.7% BW/週**）相較於快速減重（約 1.4% BW/週），能完整保留甚至增加瘦體組織（Lean Body Mass），並顯著維持跳躍高度與最大肌力表現——這對跨欄起跑與攻欄爆發力至關重要。
-
-                2. **運動員相對能量不足（REDs）與快速減重風險**
-                   * **文獻**：*Mountjoy, M., Ackerman, K. E., Bailey, D. M., et al. (2023).* 2023 International Olympic Committee's (IOC) consensus statement on Relative Energy Deficiency in Sport (REDs). *British Journal of Sports Medicine*, 57(17), 1073–1097.
-                   * **核心結論**：過度能量赤字與快速體重下降會導致內分泌失調、骨密度下降（疲勞性骨折風險上升）、肌肉合成受阻與專項無氧速度表現衰退。
-
-                3. **田徑選手水合狀態、肝醣結合水與每日體重波動（±0.5% – 1.5%）**
-                   * **文獻**：*Burke, L. M., Castell, L. M., Casa, D. J., et al. (2019).* International Association of Athletics Federations (World Athletics) Consensus Statement 2019: Nutrition for Athletics. *International Journal of Sport Nutrition and Exercise Metabolism*, 29(2), 73–84.
-                   * **核心結論**：每 1 公克肌肉肝醣約結合 3 公克水分，且高強度田徑訓練會造成顯著汗液流失。每日體重出現 **±0.5%～1.5%** 的波動多屬水分與肝醣調節，判讀真實身體組成變化應觀察 **7 日移動平均線** 並固定於晨起空腹測量。
-
-                4. **運動員增肌期速率控制（0.25% – 0.5% 體重/週）**
-                   * **文獻**：*Aragon, A. A., Schoenfeld, B. J., Wildman, R., et al. (2017).* International Society of Sports Nutrition (ISSN) position stand: diets and body composition. *Journal of the International Society of Sports Nutrition*, 14, 16.
-                   * **核心結論**：受訓運動員每週增重控制在 **0.25%～0.5% 體重** 以內，可最大化促進骨骼肌肥大並抑制過多脂肪堆積，維持短距離跨欄所需的最佳功率體重比（Power-to-Weight Ratio）。
-                """)
-
 # ==================== 【頁面 9：歷史分析紀錄】 ====================
 elif page == "歷史分析紀錄 History Records":
     st.title("歷史分析與紀錄管理 History Records")
@@ -4528,7 +4580,8 @@ elif page == "歷史分析紀錄 History Records":
         else:
             all_records = get_records_with_folder(u["team_code"], username=u["username"])
 
-        custom_folders = get_record_folders(u["team_code"])
+        # 每位使用者只讀取自己建立的資料夾，選手資料夾不同步至教練與防護員端
+        custom_folders = get_record_folders(u["team_code"], username=u["username"])
 
         # 資料夾新增與管理區
         with st.expander("📁 資料夾管理 Folder Management（新增 / 重新命名 / 刪除資料夾）", expanded=False):
@@ -4555,7 +4608,7 @@ elif page == "歷史分析紀錄 History Records":
                         rename_f_input = st.text_input("新資料夾名稱", value=sel_manage_folder, label_visibility="collapsed", key="inp_rename_folder")
                     with ren_col2:
                         if st.button("✏️ 更名", key="btn_rename_folder", use_container_width=True):
-                            ok, msg = rename_record_folder(u["team_code"], sel_manage_folder, rename_f_input)
+                            ok, msg = rename_record_folder(u["team_code"], u["username"], sel_manage_folder, rename_f_input)
                             if ok:
                                 st.success(msg)
                                 st.rerun()
@@ -4563,22 +4616,21 @@ elif page == "歷史分析紀錄 History Records":
                                 st.error(msg)
 
                     if st.button(f"🗑️ 刪除「{sel_manage_folder}」（內部紀錄將自動移至「未分類」）", key="btn_del_folder", use_container_width=True):
-                        delete_record_folder(u["team_code"], sel_manage_folder)
+                        delete_record_folder(u["team_code"], u["username"], sel_manage_folder)
                         st.success(f"已刪除資料夾「{sel_manage_folder}」，原有紀錄已安全保留於「未分類」。")
                         st.rerun()
 
         if not all_records:
             st.info("目前資料庫中尚無任何已儲存的分析紀錄。")
         else:
-            # 統計各資料夾紀錄數量
+            # 統計各資料夾紀錄數量（不屬於本人資料夾的紀錄統一計入「未分類」）
             folder_counts = {"全部紀錄": len(all_records), "未分類": 0}
             for f in custom_folders:
                 folder_counts[f] = 0
 
             for r in all_records:
-                f_tag = r[6] if len(r) > 6 and r[6] else "未分類"
-                if f_tag not in folder_counts:
-                    folder_counts[f_tag] = 0
+                raw_tag = r[6] if len(r) > 6 and r[6] else "未分類"
+                f_tag = raw_tag if raw_tag in folder_counts else "未分類"
                 folder_counts[f_tag] += 1
 
             tab_folder_names = ["全部紀錄", "未分類"] + custom_folders
@@ -4594,15 +4646,16 @@ elif page == "歷史分析紀錄 History Records":
                 except Exception:
                     details = {"raw": details_str}
 
+                display_folder = rec_folder if rec_folder in all_folder_choices else "未分類"
                 user_prefix = f"選手: {rec_user} ｜ " if is_staff else ""
-                folder_badge = f"📁 {rec_folder} ｜ " if tab_prefix == "全部紀錄" else ""
+                folder_badge = f"📁 {display_folder} ｜ " if tab_prefix == "全部紀錄" else ""
                 expander_label = f"{folder_badge}{user_prefix}{mod} - {title}"
 
                 with st.expander(expander_label):
                     # 移動資料夾工具列
                     mv_c1, mv_c2 = st.columns([3, 1])
                     with mv_c1:
-                        cur_f_idx = all_folder_choices.index(rec_folder) if rec_folder in all_folder_choices else 0
+                        cur_f_idx = all_folder_choices.index(display_folder) if display_folder in all_folder_choices else 0
                         target_move_folder = st.selectbox(
                             "所屬資料夾 Folder",
                             all_folder_choices,
@@ -4672,6 +4725,11 @@ elif page == "歷史分析紀錄 History Records":
                 with folder_tabs[idx]:
                     if fname == "全部紀錄":
                         filtered_recs = all_records
+                    elif fname == "未分類":
+                        filtered_recs = [
+                            r for r in all_records
+                            if (r[6] if len(r) > 6 and r[6] else "未分類") not in custom_folders
+                        ]
                     else:
                         filtered_recs = [r for r in all_records if (r[6] if len(r) > 6 and r[6] else "未分類") == fname]
 
