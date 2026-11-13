@@ -45,7 +45,9 @@ def calc_sleep_duration(bed_t, wake_t):
     return diff_m // 60, diff_m % 60, round(diff_m / 60.0, 2)
     
 def analyze_hurdle_action_with_ai(image_b64_str, metrics_dict, mode="single"):
-    """呼叫 Google Gemini API 進行跨欄動作截圖與關節角度生物力學診斷（去識別化保護選手隱私）"""
+    """呼叫 Google Gemini API 進行跨欄動作截圖與關節角度生物力學診斷（含 503 擁塞自動重試與備援切換）"""
+    import time
+
     if not HAS_GENAI:
         return False, "系統尚未安裝 `google-genai` 套件，請先於 `requirements.txt` 加入 `google-genai` 並重新部署。"
 
@@ -70,7 +72,7 @@ def analyze_hurdle_action_with_ai(image_b64_str, metrics_dict, mode="single"):
 
         if mode == "dual":
             prompt = (
-                "你是一位具備運動生物力學背景的專業田徑跨欄教練。請根據附圖（左為影片 A、右為影片 B）的選手跨欄動作標記、海量的文獻數據與以下量測數據（已去識別化），"
+                "你是一位具備運動生物力學背景的專業田徑跨欄教練。請根據附圖（左為影片 A、右為影片 B）的選手跨欄動作標記、網上文獻數據與以下量測數據（已去識別化），"
                 "以繁體中文提供精準、具體且可執行的教練分析報告：\n"
                 "1. **雙影動作與角度差異對比**：比較影片 A 與影片 B 在軀幹前傾、攻欄腿/擺動腿摺疊、起跳/過欄/著地姿態與角度數值上的關鍵差異。\n"
                 "2. **生物力學優缺點診斷**：指出目前動作中影響過欄效率、騰空時間或水平速度維持的核心問題。\n"
@@ -78,7 +80,7 @@ def analyze_hurdle_action_with_ai(image_b64_str, metrics_dict, mode="single"):
             )
         else:
             prompt = (
-                "你是一位具備運動生物力學背景的專業田徑跨欄教練。請根據附圖的選手跨欄關鍵影格標記、海量的文獻數據與以下量測數據（已去識別化），"
+                "你是一位具備運動生物力學背景的專業田徑跨欄教練。請根據附圖的選手跨欄關鍵影格標記、網上文獻數據與以下量測數據（已去識別化），"
                 "以繁體中文提供精準、具體且可執行的教練分析報告：\n"
                 "1. **動作階段與角度判讀**：結合所選動作階段（如起跳、過欄最高點、著地或欄間跑）與圖中關節角度/前傾角數值，評估身體重心與肢段排列是否理想。\n"
                 "2. **技術亮點與修正重點**：明確列出 1～2 項做得好的地方，以及 1～2 項最需要優先修正的動作細節。\n"
@@ -88,31 +90,50 @@ def analyze_hurdle_action_with_ai(image_b64_str, metrics_dict, mode="single"):
         candidate_models = ["gemini-3.8-flash", "gemini-3.5-flash-lite"]
         last_err = None
 
-        def _try_generate(m_name):
-            resp = client.models.generate_content(
-                model=m_name,
-                contents=[
-                    types.Part.from_bytes(data=img_bytes, mime_type=mime_type),
-                    prompt
-                ]
+        def _is_retryable_error(err_obj):
+            err_low = str(err_obj).lower()
+            retry_keywords = (
+                "404", "not found", "no longer available",
+                "503", "unavailable", "high demand", "overloaded",
+                "500", "502", "504", "internal", "deadline"
             )
-            if resp and getattr(resp, "text", None):
-                return resp.text.strip()
+            return any(k in err_low for k in retry_keywords)
+
+        def _try_generate_with_retry(m_name, max_retries=2):
+            nonlocal last_err
+            for attempt in range(max_retries):
+                try:
+                    resp = client.models.generate_content(
+                        model=m_name,
+                        contents=[
+                            types.Part.from_bytes(data=img_bytes, mime_type=mime_type),
+                            prompt
+                        ]
+                    )
+                    if resp and getattr(resp, "text", None):
+                        return resp.text.strip()
+                except Exception as inner_e:
+                    last_err = inner_e
+                    err_low = str(inner_e).lower()
+                    # 若模型已下架(404)，直接跳下一個模型，不浪費時間重試
+                    if "404" in err_low or "not found" in err_low or "no longer available" in err_low:
+                        return None
+                    # 若為 503 尖峰擁塞或暫時性錯誤，等待 1.5 秒後重試，若仍失敗則切換備援模型
+                    if _is_retryable_error(inner_e):
+                        if attempt < max_retries - 1:
+                            time.sleep(1.5)
+                            continue
+                        return None
+                    raise inner_e
             return None
 
+        # 依序嘗試主力與輕量模型（各自最多重試 2 次）
         for model_name in candidate_models:
-            try:
-                res_text = _try_generate(model_name)
-                if res_text:
-                    return True, res_text
-            except Exception as inner_e:
-                last_err = inner_e
-                err_low = str(inner_e).lower()
-                if "404" in err_low or "not found" in err_low or "no longer available" in err_low:
-                    continue
-                raise inner_e
+            res_text = _try_generate_with_retry(model_name, max_retries=2)
+            if res_text:
+                return True, res_text
 
-        # 自動查詢目前 API Key 可用的最新 Flash 模型作為動態備援
+        # 動態查詢目前帳號可用的其他 Flash 模型作為最終備援
         try:
             excluded_kw = ("tts", "image", "live", "audio", "cyber", "embedding")
             for m in client.models.list():
@@ -121,11 +142,14 @@ def analyze_hurdle_action_with_ai(image_b64_str, metrics_dict, mode="single"):
                 if "generateContent" in actions and "flash" in m_id.lower() and not any(k in m_id.lower() for k in excluded_kw):
                     clean_id = m_id.replace("models/", "")
                     if clean_id not in candidate_models:
-                        res_text = _try_generate(clean_id)
+                        res_text = _try_generate_with_retry(clean_id, max_retries=1)
                         if res_text:
                             return True, res_text
         except Exception as list_e:
             last_err = list_e
+
+        if last_err and ("503" in str(last_err) or "UNAVAILABLE" in str(last_err)):
+            return False, "Google Gemini 伺服器目前處於尖峰高負載狀態（503），系統已自動重試所有備援模型仍暫時滿載，請稍候 10～20 秒後再點擊一次診斷按鈕。"
 
         return False, f"AI 模型呼叫失敗：{str(last_err)}"
     except Exception as e:
