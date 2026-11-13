@@ -43,7 +43,7 @@ def calc_sleep_duration(bed_t, wake_t):
     else:
         diff_m = wake_m - bed_m
     return diff_m // 60, diff_m % 60, round(diff_m / 60.0, 2)
-
+    
 def analyze_hurdle_action_with_ai(image_b64_str, metrics_dict, mode="single"):
     """呼叫 Google Gemini API 進行跨欄動作截圖與關節角度生物力學診斷（去識別化保護選手隱私）"""
     if not HAS_GENAI:
@@ -70,40 +70,62 @@ def analyze_hurdle_action_with_ai(image_b64_str, metrics_dict, mode="single"):
 
         if mode == "dual":
             prompt = (
-                "你是一位具備運動生物力學背景的專業田徑跨欄教練。請根據附圖（左為影片 A、右為影片 B）的選手跨欄動作標記與以下量測數據（已去識別化），"
+                "你是一位具備運動生物力學背景的專業田徑跨欄教練。請根據附圖（左為影片 A、右為影片 B）的選手跨欄動作標記、海量的文獻數據與以下量測數據（已去識別化），"
                 "以繁體中文提供精準、具體且可執行的教練分析報告：\n"
                 "1. **雙影動作與角度差異對比**：比較影片 A 與影片 B 在軀幹前傾、攻欄腿/擺動腿摺疊、起跳/過欄/著地姿態與角度數值上的關鍵差異。\n"
                 "2. **生物力學優缺點診斷**：指出目前動作中影響過欄效率、騰空時間或水平速度維持的核心問題。\n"
-                "3. **推薦輔助訓練動作（2 項 Hurdle Drills）**：針對上述問題提供 2 項具體的欄架專項技術訓練與操作重點。\n\n"
                 f"量測數據：{json.dumps(metrics_dict, ensure_ascii=False)}"
             )
         else:
             prompt = (
-                "你是一位具備運動生物力學背景的專業田徑跨欄教練。請根據附圖的選手跨欄關鍵影格標記與以下量測數據（已去識別化），"
+                "你是一位具備運動生物力學背景的專業田徑跨欄教練。請根據附圖的選手跨欄關鍵影格標記、海量的文獻數據與以下量測數據（已去識別化），"
                 "以繁體中文提供精準、具體且可執行的教練分析報告：\n"
                 "1. **動作階段與角度判讀**：結合所選動作階段（如起跳、過欄最高點、著地或欄間跑）與圖中關節角度/前傾角數值，評估身體重心與肢段排列是否理想。\n"
                 "2. **技術亮點與修正重點**：明確列出 1～2 項做得好的地方，以及 1～2 項最需要優先修正的動作細節。\n"
-                "3. **推薦輔助訓練動作（2 項 Hurdle Drills）**：針對需要改善的環節，推薦 2 項具體的欄架專項輔助訓練與執行提示。\n\n"
                 f"量測數據：{json.dumps(metrics_dict, ensure_ascii=False)}"
             )
 
+        candidate_models = ["gemini-3.8-flash", "gemini-3.5-flash-lite"]
         last_err = None
-        for model_name in ["gemini-2.5-flash", "gemini-2.0-flash"]:
+
+        def _try_generate(m_name):
+            resp = client.models.generate_content(
+                model=m_name,
+                contents=[
+                    types.Part.from_bytes(data=img_bytes, mime_type=mime_type),
+                    prompt
+                ]
+            )
+            if resp and getattr(resp, "text", None):
+                return resp.text.strip()
+            return None
+
+        for model_name in candidate_models:
             try:
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=[
-                        types.Part.from_bytes(data=img_bytes, mime_type=mime_type),
-                        prompt
-                    ]
-                )
-                if response and getattr(response, "text", None):
-                    return True, response.text.strip()
+                res_text = _try_generate(model_name)
+                if res_text:
+                    return True, res_text
             except Exception as inner_e:
                 last_err = inner_e
-                if "404" in str(inner_e) or "not found" in str(inner_e).lower():
+                err_low = str(inner_e).lower()
+                if "404" in err_low or "not found" in err_low or "no longer available" in err_low:
                     continue
                 raise inner_e
+
+        # 自動查詢目前 API Key 可用的最新 Flash 模型作為動態備援
+        try:
+            excluded_kw = ("tts", "image", "live", "audio", "cyber", "embedding")
+            for m in client.models.list():
+                m_id = getattr(m, "name", "")
+                actions = getattr(m, "supported_actions", None) or []
+                if "generateContent" in actions and "flash" in m_id.lower() and not any(k in m_id.lower() for k in excluded_kw):
+                    clean_id = m_id.replace("models/", "")
+                    if clean_id not in candidate_models:
+                        res_text = _try_generate(clean_id)
+                        if res_text:
+                            return True, res_text
+        except Exception as list_e:
+            last_err = list_e
 
         return False, f"AI 模型呼叫失敗：{str(last_err)}"
     except Exception as e:
@@ -113,7 +135,6 @@ def analyze_hurdle_action_with_ai(image_b64_str, metrics_dict, mode="single"):
         if "API_KEY_INVALID" in err_str or "400" in err_str or "403" in err_str:
             return False, f"API Key 驗證失敗，請確認 Google AI Studio 金鑰是否正確或已啟用（錯誤訊息：{err_str}）。"
         return False, f"AI 分析發生錯誤：{err_str}"
-
 # -------------------- 【運動醫學體重監控評估演算法】 --------------------
 MEASURE_TIMING_OPTIONS = [
     "🌅 晨起空腹如廁後 (最準確基準)",
