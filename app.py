@@ -17,6 +17,14 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
+from ai_analytics import (
+    analyze_athlete_fatigue_and_injury_risk,
+    analyze_hurdle_timer_with_history,
+    analyze_longitudinal_hurdle_comparison,
+    generate_pre_comp_integrated_report,
+    generate_trainer_review_copilot,
+)
+
 def get_base64_video(uploaded_file):
     """將 Streamlit 上傳的影片檔轉換為 Base64 字串"""
     bytes_data = uploaded_file.getvalue()
@@ -1503,6 +1511,54 @@ if page == "系統首頁 Home":
             st.info("目前團隊尚無成員資料")
 
         st.markdown("---")
+        st.subheader("🤖 AI 賽前整合備戰週報 Pre-Competition AI Weekly Report")
+        if u["role"] in ["coach", "trainer"]:
+            w_athletes = get_team_athletes(u["team_code"])
+            target_w_ath = (
+                st.selectbox(
+                    "選擇要生成週報的選手：", w_athletes, key="home_ai_ath_sel"
+                )
+                if w_athletes
+                else None
+            )
+            if not w_athletes:
+                st.caption("目前團隊尚無選手帳號，請先讓選手加入團隊後即可生成個人賽前整合週報。")
+        else:
+            target_w_ath = u["username"]
+
+        if target_w_ath and st.button(
+            f"📋 生成 {target_w_ath} 本週賽前整合週報",
+            key="btn_home_ai_weekly",
+            use_container_width=True,
+        ):
+            with st.spinner("正在整合賽事倒數、體重 MA7、課表負荷減量與欄間速度..."):
+                comps_ath = get_competitions(
+                    u["team_code"], username=target_w_ath
+                ) or get_competitions(u["team_code"])
+                g_row = get_weight_goal(target_w_ath)
+                w_logs = get_weight_logs(
+                    username=target_w_ath, team_code=u["team_code"]
+                )
+                w_eval = evaluate_measurement_progress(g_row, w_logs)
+                p_rows = get_training_plans(
+                    username=target_w_ath, team_code=u["team_code"]
+                )
+                h_rows = get_user_records(
+                    u["team_code"],
+                    username=target_w_ath,
+                    module="欄間秒數及速度計算 Hurdle Time & Speed Calculation",
+                )
+                st.session_state[f"ai_weekly_{target_w_ath}"] = (
+                    generate_pre_comp_integrated_report(
+                        target_w_ath, comps_ath, g_row, w_eval, p_rows, h_rows
+                    )
+                )
+
+        if target_w_ath and st.session_state.get(f"ai_weekly_{target_w_ath}"):
+            with st.container(border=True):
+                st.markdown(st.session_state[f"ai_weekly_{target_w_ath}"])
+
+        st.markdown("---")
         with st.expander("⚙️ 帳號設定與團隊管理 Account & Team Settings", expanded=(u["team_code"] == "UNASSIGNED")):
             tab_team, tab_chg_pw, tab_del_acc = st.tabs([
                 "👥 加入 / 切換團隊 Team Settings",
@@ -1704,6 +1760,36 @@ elif page == "運動防護 Injury Care":
             if log_item["body_map_b64"]:
                 st.image(log_item["body_map_b64"], caption="選手標記痛點圖", width=240)
 
+        with st.expander(
+            "🤖 AI 疲勞負荷 (ACWR) 與拉傷風險預警評估", expanded=False
+        ):
+            if role in ["trainer", "coach"]:
+                risk_athletes = get_team_athletes(team_code)
+                sel_risk_ath = (
+                    st.selectbox(
+                        "選擇評估選手：", risk_athletes, key="ai_risk_ath_sel"
+                    )
+                    if risk_athletes
+                    else None
+                )
+            else:
+                sel_risk_ath = u["username"]
+
+            if sel_risk_ath and st.button(
+                f"🩺 執行 {sel_risk_ath} 近 28 日負荷與拉傷風險分析",
+                key="btn_ai_acwr_risk",
+            ):
+                with st.spinner("正在計算 ACWR 急慢性負荷比與生理恢復指標..."):
+                    ath_plans = [p for p in raw_plans if p[1] == sel_risk_ath]
+                    st.session_state[f"ai_acwr_{sel_risk_ath}"] = (
+                        analyze_athlete_fatigue_and_injury_risk(
+                            sel_risk_ath, ath_plans
+                        )
+                    )
+
+            if sel_risk_ath and st.session_state.get(f"ai_acwr_{sel_risk_ath}"):
+                st.markdown(st.session_state[f"ai_acwr_{sel_risk_ath}"])
+
         if role == "trainer":
             tab_review, tab_manual = st.tabs(["📋 選手傷病日誌批改區", "➕ 獨立開立防護報告"])
 
@@ -1760,6 +1846,37 @@ elif page == "運動防護 Injury Care":
 
                             with col_right:
                                 st.markdown("##### 🩺 防護員批改勾選與回饋")
+                                if st.button(
+                                    "✨ AI 輔助生成防護處置與批改草稿",
+                                    key=f"ai_copilot_{p_id}",
+                                    use_container_width=True,
+                                ):
+                                    with st.spinner(
+                                        "正在結合疼痛性質與近期 ACWR 負荷生成建議..."
+                                    ):
+                                        ath_recent = [
+                                            p
+                                            for p in raw_plans
+                                            if p[1] == item["athlete"]
+                                        ]
+                                        st.session_state[
+                                            f"ai_copilot_res_{p_id}"
+                                        ] = generate_trainer_review_copilot(
+                                            item,
+                                            ath_recent,
+                                            STATUS_TAG_OPTIONS,
+                                            TREATMENT_CHECKLIST_OPTIONS,
+                                        )
+
+                                if st.session_state.get(
+                                    f"ai_copilot_res_{p_id}"
+                                ):
+                                    st.info(
+                                        st.session_state[
+                                            f"ai_copilot_res_{p_id}"
+                                        ]
+                                    )
+
                                 init_status = fb[5] if fb else STATUS_TAG_OPTIONS[1]
                                 if init_status not in STATUS_TAG_OPTIONS:
                                     init_status = STATUS_TAG_OPTIONS[0]
@@ -2609,6 +2726,36 @@ elif page == "角度分析 Angle Analysis":
                 try:
                     tm_data = json.loads(captured_timer_json)
                     st.success(f"打點數據接收成功！總累積耗時：`{tm_data.get('total_time')} 秒`")
+                    if st.button(
+                        "🤖 AI 診斷本次欄間速度曲線與節奏瓶頸",
+                        key="btn_ai_timer_single",
+                        use_container_width=True,
+                    ):
+                        with st.spinner(
+                            "正在分析分段速度衰減率與三步節奏斷層..."
+                        ):
+                            u_curr_ai = st.session_state.get("user_info")
+                            hist_rows = (
+                                get_user_records(
+                                    u_curr_ai["team_code"],
+                                    username=u_curr_ai["username"],
+                                    module="欄間秒數及速度計算 Hurdle Time & Speed Calculation",
+                                )
+                                if u_curr_ai
+                                else []
+                            )
+                            st.session_state["ai_timer_single_res"] = (
+                                analyze_hurdle_timer_with_history(
+                                    f"本次測驗 ({uploaded_file.name})",
+                                    tm_data,
+                                    hist_rows,
+                                )
+                            )
+
+                    if st.session_state.get("ai_timer_single_res"):
+                        with st.container(border=True):
+                            st.markdown(st.session_state["ai_timer_single_res"])
+
                     if st.session_state["user_info"]:
                         u_curr_t = st.session_state["user_info"]
                         timer_folder_opts = ["未分類"] + get_record_folders(u_curr_t["team_code"])
@@ -3250,6 +3397,21 @@ elif page == "跨期數據對比 Longitudinal Comparison":
                             sorted_table_index = [seg for seg in ORDERED_SEGMENTS if seg in existing_table_indices] + [seg for seg in existing_table_indices if seg not in ORDERED_SEGMENTS]
                             df_table = df_table.reindex(sorted_table_index)
                             st.dataframe(df_table, use_container_width=True)
+
+                        if st.button(
+                            "🤖 AI 跨期對比分析多趟欄間表現演變",
+                            key="btn_ai_timer_longitudinal",
+                            use_container_width=True,
+                        ):
+                            with st.spinner("正在比對所選多筆測驗的分段速度曲線..."):
+                                sel_rows = [rec_options[k] for k in selected_keys]
+                                st.session_state["ai_timer_long_res"] = (
+                                    analyze_longitudinal_hurdle_comparison(sel_rows)
+                                )
+
+                        if st.session_state.get("ai_timer_long_res"):
+                            with st.container(border=True):
+                                st.markdown(st.session_state["ai_timer_long_res"])
 
                     elif mod_choice == "關鍵影格角度量測 Keyframe Angle Measurement":
                         plot_dict_angle = {}
@@ -3957,7 +4119,7 @@ elif page == "課表紀錄 Training Plan":
                                         <path d="M130,310 L132,380 L120,382 L118,315 Z" class="body-shape"/>
                                         <path d="M100,75 L100,220 M70,115 Q100,125 130,115 M75,155 L125,155" class="body-line"/>
                                     </svg>
-                                    <div class="pin-overlay" id="oFront"></div>
+                                    <div class="pin-overlay" id="overlayF"></div>
                                 </div>
                             </div>
                             <div class="body-card">
@@ -3973,123 +4135,106 @@ elif page == "課表紀錄 Training Plan":
                                         <path d="M125,230 L130,310 L118,315 L108,240 Z" class="body-shape"/>
                                         <path d="M70,310 L68,380 L80,382 L82,315 Z" class="body-shape"/>
                                         <path d="M130,310 L132,380 L120,382 L118,315 Z" class="body-shape"/>
-                                        <path d="M100,65 L100,225 M70,105 L100,135 L130,105 M72,210 Q100,225 128,210" class="body-line"/>
+                                        <path d="M100,70 L100,225 M72,185 Q100,205 128,185 M75,230 Q100,245 125,230" class="body-line"/>
                                     </svg>
-                                    <div class="pin-overlay" id="oBack"></div>
+                                    <div class="pin-overlay" id="overlayB"></div>
                                 </div>
                             </div>
                         </div>
                     </div>
                     <script>
-                        const wF = document.getElementById('wFront'), wB = document.getElementById('wBack');
-                        const oF = document.getElementById('oFront'), oB = document.getElementById('oBack');
+                        const wFront = document.getElementById('wFront');
+                        const wBack = document.getElementById('wBack');
+                        const overlayF = document.getElementById('overlayF');
+                        const overlayB = document.getElementById('overlayB');
                         const pinCountText = document.getElementById('pinCountText');
                         let pins = [];
 
-                        function syncMapToStreamlit() {
-                            const textAreas = window.parent.document.querySelectorAll('textarea');
-                            let targetTA = null;
-                            textAreas.forEach(ta => {
-                                if ((ta.getAttribute('aria-label') || '').includes('body_map_img_b64')) targetTA = ta;
-                            });
-                            if (!targetTA) return;
+                        function syncVal(el, val) {
+                            if (!el) return;
+                            try {
+                                const pWin = window.parent;
+                                const nativeSetter = pWin.Object.getOwnPropertyDescriptor(pWin.HTMLTextAreaElement.prototype, "value").set;
+                                nativeSetter.call(el, val);
+                                if (el._valueTracker) el._valueTracker.setValue('');
+                                el.focus(); el.dispatchEvent(new pWin.Event('input', { bubbles: true }));
+                                el.dispatchEvent(new pWin.Event('change', { bubbles: true })); el.blur();
+                            } catch(err) { el.value = val; }
+                        }
 
-                            if (pins.length === 0) {
-                                try {
-                                    const pWin = window.parent;
-                                    const nativeSetter = pWin.Object.getOwnPropertyDescriptor(pWin.HTMLTextAreaElement.prototype, "value").set;
-                                    nativeSetter.call(targetTA, "");
-                                    if (targetTA._valueTracker) targetTA._valueTracker.setValue('');
-                                    targetTA.dispatchEvent(new pWin.Event('input', { bubbles: true }));
-                                    targetTA.dispatchEvent(new pWin.Event('change', { bubbles: true }));
-                                } catch(err) {
-                                    targetTA.value = "";
-                                    targetTA.dispatchEvent(new Event('input', { bubbles: true }));
-                                }
-                                return;
-                            }
-
-                            const off = document.createElement('canvas');
-                            off.width = 440; off.height = 400;
-                            const ctx = off.getContext('2d');
-                            ctx.fillStyle = "#ffffff";
-                            ctx.fillRect(0, 0, off.width, off.height);
-
-                            const svgFStr = new XMLSerializer().serializeToString(document.getElementById('svgF'));
-                            const svgBStr = new XMLSerializer().serializeToString(document.getElementById('svgB'));
-                            const imgF = new Image(), imgB = new Image();
-
-                            imgF.onload = () => {
-                                ctx.drawImage(imgF, 15, 10, 190, 380);
-                                imgB.onload = () => {
-                                    ctx.drawImage(imgB, 235, 10, 190, 380);
-                                    pins.forEach((p, i) => {
-                                        const cx = (p.side === 'F' ? 15 : 235) + (p.x / 100) * 190;
-                                        const cy = 10 + (p.y / 100) * 380;
-                                        ctx.beginPath(); ctx.arc(cx, cy, 11, 0, Math.PI * 2);
-                                        ctx.fillStyle = "#ef4444"; ctx.fill();
-                                        ctx.lineWidth = 2; ctx.strokeStyle = "#ffffff"; ctx.stroke();
-                                        ctx.fillStyle = "#ffffff"; ctx.font = "bold 11px sans-serif";
-                                        ctx.textAlign = "center"; ctx.textBaseline = "middle";
-                                        ctx.fillText(String(i + 1), cx, cy);
+                        function captureSnapshot() {
+                            const can = document.createElement('canvas'); can.width = 440; can.height = 400; const ctx = can.getContext('2d');
+                            ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, 440, 400);
+                            const s1 = new XMLSerializer().serializeToString(document.getElementById('svgF'));
+                            const s2 = new XMLSerializer().serializeToString(document.getElementById('svgB'));
+                            const i1 = new Image(); const i2 = new Image();
+                            i1.onload = function() {
+                                ctx.drawImage(i1, 10, 10, 190, 380);
+                                i2.onload = function() {
+                                    ctx.drawImage(i2, 230, 10, 190, 380);
+                                    pins.forEach((p, idx) => {
+                                        const px = (p.side === 'F' ? 10 : 230) + p.rx * 190;
+                                        const py = 10 + p.ry * 380;
+                                        ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc(px, py, 9, 0, Math.PI*2); ctx.fill();
+                                        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.stroke();
+                                        ctx.fillStyle = '#ffffff'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                                        ctx.fillText(idx + 1, px, py);
                                     });
-                                    const dataUrl = off.toDataURL('image/png');
-                                    try {
-                                        const pWin = window.parent;
-                                        const nativeSetter = pWin.Object.getOwnPropertyDescriptor(pWin.HTMLTextAreaElement.prototype, "value").set;
-                                        nativeSetter.call(targetTA, dataUrl);
-                                        if (targetTA._valueTracker) targetTA._valueTracker.setValue('');
-                                        targetTA.dispatchEvent(new pWin.Event('input', { bubbles: true }));
-                                        targetTA.dispatchEvent(new pWin.Event('change', { bubbles: true }));
-                                    } catch(err) {
-                                        targetTA.value = dataUrl;
-                                        targetTA.dispatchEvent(new Event('input', { bubbles: true }));
-                                    }
+                                    const textAreas = window.parent.document.querySelectorAll('textarea');
+                                    let targetTA = null;
+                                    textAreas.forEach(ta => { if ((ta.getAttribute('aria-label') || '').includes('body_map_img_b64')) targetTA = ta; });
+                                    if (targetTA) syncVal(targetTA, pins.length > 0 ? can.toDataURL('image/png') : "");
                                 };
-                                imgB.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgBStr);
+                                i2.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(s2)));
                             };
-                            imgF.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgFStr);
+                            i1.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(s1)));
                         }
 
                         function renderPins() {
-                            oF.innerHTML = ''; oB.innerHTML = '';
-                            pins.forEach((p, i) => {
+                            overlayF.innerHTML = ''; overlayB.innerHTML = '';
+                            pins.forEach((p, idx) => {
                                 const el = document.createElement('div');
                                 el.className = 'pin-marker';
-                                el.style.left = p.x + '%';
-                                el.style.top = p.y + '%';
-                                el.innerText = i + 1;
-                                el.title = "點擊此標記可移除";
+                                el.style.left = (p.rx * 100) + '%';
+                                el.style.top = (p.ry * 100) + '%';
+                                el.title = '點擊移除標記 #' + (idx + 1);
+                                el.innerText = idx + 1;
                                 el.addEventListener('click', (ev) => {
                                     ev.stopPropagation();
-                                    pins.splice(i, 1);
+                                    pins.splice(idx, 1);
                                     renderPins();
                                 });
-                                (p.side === 'F' ? oF : oB).appendChild(el);
+                                if (p.side === 'F') overlayF.appendChild(el); else overlayB.appendChild(el);
                             });
                             pinCountText.innerText = `目前標記數：${pins.length}（點擊標記點可直接移除）`;
-                            syncMapToStreamlit();
+                            captureSnapshot();
                         }
 
-                        wF.addEventListener('click', (e) => {
-                            const r = wF.getBoundingClientRect();
-                            pins.push({side: 'F', x: ((e.clientX - r.left) / r.width) * 100, y: ((e.clientY - r.top) / r.height) * 100});
-                            renderPins();
-                        });
-                        wB.addEventListener('click', (e) => {
-                            const r = wB.getBoundingClientRect();
-                            pins.push({side: 'B', x: ((e.clientX - r.left) / r.width) * 100, y: ((e.clientY - r.top) / r.height) * 100});
-                            renderPins();
-                        });
+                        function bindClick(wrapper, side) {
+                            wrapper.addEventListener('click', (e) => {
+                                const rect = wrapper.getBoundingClientRect();
+                                const rx = (e.clientX - rect.left) / rect.width;
+                                const ry = (e.clientY - rect.top) / rect.height;
+                                pins.push({ side, rx, ry });
+                                renderPins();
+                            });
+                        }
+
+                        bindClick(wFront, 'F');
+                        bindClick(wBack, 'B');
+
                         document.getElementById('btnUndoPin').addEventListener('click', () => {
                             if (pins.length > 0) {
                                 pins.pop();
                                 renderPins();
                             }
                         });
+
                         document.getElementById('btnClearPins').addEventListener('click', () => {
-                            pins = [];
-                            renderPins();
+                            if (pins.length > 0) {
+                                pins = [];
+                                renderPins();
+                            }
                         });
                     </script>
                 </body>
@@ -4101,7 +4246,7 @@ elif page == "課表紀錄 Training Plan":
 
 # ==================== 【頁面 8：體重監控 Weight Monitoring】 ====================
 elif page == "體重監控 Weight Monitoring":
-    st.title("⚖️ 競技體重監控與運動醫學軌跡評估 Weight Monitoring")
+    st.title("⚖️ 競技體重監控與運動醫學評估 Weight Monitoring")
     st.markdown("---")
 
     if st.session_state["user_info"] is None:
@@ -4115,22 +4260,20 @@ elif page == "體重監控 Weight Monitoring":
         if is_staff:
             team_athletes = get_team_athletes(team_code)
             if not team_athletes:
-                st.warning("團隊目前尚無選手帳號")
-                target_athlete = None
+                st.warning("目前團隊中尚無選手帳號。")
+                target_wm_user = None
             else:
-                target_athlete = st.selectbox("請選擇檢視或協助設定的選手 Select Athlete：", team_athletes, key="wm_sel_athlete")
+                target_wm_user = st.selectbox("請選擇要檢視的選手 Select Athlete：", team_athletes, key="wm_sel_athlete")
         else:
-            target_athlete = u["username"]
+            target_wm_user = u["username"]
 
-        if target_athlete:
-            goal_row = get_weight_goal(target_athlete)
-            logs_rows = get_weight_logs(username=target_athlete, team_code=team_code)
+        if target_wm_user:
+            goal_row = get_weight_goal(target_wm_user)
+            logs_rows = get_weight_logs(username=target_wm_user, team_code=team_code)
             progress_eval = evaluate_measurement_progress(goal_row, logs_rows)
 
             if goal_row and progress_eval:
-                _, _, g_start_w, g_start_d, g_target_w, g_target_d, g_notes, g_updated = goal_row
-
-                st.subheader(f"📊 {target_athlete} 體重進度總覽與運動醫學即時判讀")
+                st.subheader(f"📊 {target_wm_user} 競技體重即時狀態總覽")
                 m1, m2, m3, m4 = st.columns(4)
                 m1.metric(
                     "最新測量體重",
@@ -4138,22 +4281,20 @@ elif page == "體重監控 Weight Monitoring":
                     f"{progress_eval['daily_diff']:+.1f} kg (較前次)"
                 )
                 m2.metric(
-                    "7 日移動平均線",
+                    "7 日移動平均線 (MA7)",
                     f"{progress_eval['ma7_w']:.1f} kg",
-                    f"今日理論軌跡 {progress_eval['expected_today_w']:.1f} kg"
+                    f"{progress_eval['vs_expected']:+.2f} kg (較理論軌跡)"
                 )
                 m3.metric(
-                    "目標體重 / 剩餘差距",
-                    f"{g_target_w:.1f} kg",
-                    f"尚差 {abs(progress_eval['remaining_w']):.1f} kg" if abs(progress_eval['remaining_w']) > 0.25 else "已達標"
+                    "目標體重 & 剩餘差距",
+                    f"{float(goal_row[4]):.1f} kg",
+                    f"{progress_eval['remaining_w']:+.1f} kg (剩 {max(progress_eval['days_left'], 0)} 天)"
                 )
                 m4.metric(
-                    "目標達成進度",
-                    f"{progress_eval['progress_pct']:.1f}%",
-                    f"剩餘 {max(progress_eval['days_left'], 0)} 天 (目標日 {g_target_d})"
+                    "平均每週變化速率",
+                    f"{progress_eval['actual_weekly_pct']:+.2f}% / 週",
+                    f"目標完成度 {progress_eval['progress_pct']:.0f}%"
                 )
-
-                st.progress(min(max(progress_eval["progress_pct"] / 100.0, 0.0), 1.0))
 
                 lvl = progress_eval["status_level"]
                 box_msg = f"**{progress_eval['status_title']}**\n\n{progress_eval['feedback_msg']}"
@@ -4168,412 +4309,374 @@ elif page == "體重監控 Weight Monitoring":
 
                 if progress_eval["water_note"]:
                     st.info(progress_eval["water_note"])
-
                 st.markdown("---")
             elif goal_row and not logs_rows:
-                _, _, g_start_w, g_start_d, g_target_w, g_target_d, g_notes, _ = goal_row
-                st.info(
-                    f"🎯 目前已設定體重目標：**{g_start_w:.1f} kg → {g_target_w:.1f} kg**（目標日期：**{g_target_d}**）。"
-                    f"請於下方「📝 每日體重測量紀錄」輸入第一筆測量數值，系統將立即啟動軌跡比對與運動醫學分析。"
-                )
-            elif not goal_row:
-                st.info("💡 尚未設定目標體重與目標達成日期。請先於下方「🎯 設定目標體重與計畫合理性評估」建立個人目標，系統將依據運動醫學共識自動規劃安全進度軌跡。")
+                st.info(f"🎯 已設定目標體重：**{float(goal_row[2]):.1f} kg ➔ {float(goal_row[4]):.1f} kg**（目標日期：`{goal_row[5]}`）。請新增第一筆體重測量紀錄以啟動運動醫學軌跡評估！")
+                st.markdown("---")
+            elif not goal_row and logs_rows:
+                latest_only = logs_rows[-1]
+                st.info(f"⚖️ 目前最新體重紀錄：**{float(latest_only[3]):.1f} kg**（測量日：`{latest_only[2]}`）。尚未設定目標體重，建議先至「🎯 目標體重與速率安全規劃」設定目標！")
+                st.markdown("---")
 
-            tab_wm_log, tab_wm_goal, tab_wm_chart, tab_wm_lit = st.tabs([
-                "📝 每日體重測量紀錄",
-                "🎯 設定目標體重與計畫評估",
-                "📈 體重軌跡與 7 日均線圖表",
-                "📚 運動醫學文獻依據"
-            ])
+            if not is_staff:
+                tab_wm_log, tab_wm_goal, tab_wm_chart, tab_wm_lit = st.tabs([
+                    "📝 每日體重測量登錄",
+                    "🎯 目標體重與速率安全規劃",
+                    "📈 體重趨勢與目標軌跡圖",
+                    "📚 運動醫學文獻依據"
+                ])
+            else:
+                tab_wm_chart, tab_wm_goal, tab_wm_lit = st.tabs([
+                    "📈 選手體重趨勢與歷史明細",
+                    "🎯 選手體重目標與速率評估",
+                    "📚 運動醫學文獻依據"
+                ])
+                tab_wm_log = None
 
-            with tab_wm_log:
-                st.subheader("新增 / 更新測量紀錄")
-                st.caption("建議於每日「晨起空腹如廁後」穿著固定輕便衣物測量，以排除運動流汗脫水與胃內容物造成的誤差（World Athletics, 2019）。")
+            if tab_wm_log is not None:
+                with tab_wm_log:
+                    st.subheader("登錄今日體重測量紀錄 Daily Weight Log")
+                    st.caption("💡 依據 *World Athletics (2019)* 建議：固定於**晨起空腹如廁後**測量，可將腸胃內容物與水分誤差降至最低。")
 
-                default_w_val = float(logs_rows[-1][3]) if logs_rows else (float(goal_row[2]) if goal_row else 60.0)
-                with st.form("form_weight_log"):
-                    c_l1, c_l2, c_l3 = st.columns(3)
-                    with c_l1:
-                        log_date_in = st.date_input("測量日期 Measurement Date", value=datetime.date.today())
-                    with c_l2:
-                        weight_kg_in = st.number_input("測量體重 (kg)", min_value=30.0, max_value=150.0, value=default_w_val, step=0.1, format="%.1f")
-                    with c_l3:
-                        use_bf = st.checkbox("同時紀錄體脂率 (%)", value=False)
-                        bf_pct_in = st.number_input("體脂率 Body Fat (%)", min_value=3.0, max_value=50.0, value=12.0, step=0.1, format="%.1f", disabled=not use_bf)
+                    default_w = float(logs_rows[-1][3]) if logs_rows else (float(goal_row[2]) if goal_row else 65.0)
+                    with st.form("form_weight_log"):
+                        wc1, wc2 = st.columns(2)
+                        with wc1:
+                            w_date = st.date_input("測量日期 Measurement Date", value=datetime.date.today())
+                            w_val = st.number_input("測量體重 Weight (kg)", min_value=30.0, max_value=160.0, value=default_w, step=0.1, format="%.1f")
+                        with wc2:
+                            w_timing = st.selectbox("測量時機 Measurement Timing", MEASURE_TIMING_OPTIONS)
+                            bf_val = st.number_input("體脂率 Body Fat % (選填，0 代表未測量)", min_value=0.0, max_value=50.0, value=0.0, step=0.1, format="%.1f")
+                        w_notes = st.text_input("生理與飲食狀態備註 (例：昨日高碳水補水、流汗量大、生理期前水腫...)")
 
-                    timing_in = st.selectbox("測量時機 Measurement Timing", MEASURE_TIMING_OPTIONS)
-                    notes_in = st.text_input("生理與飲食備註（例：昨日高碳水補肝醣、高強度欄架課後流汗較多、生理期水腫等）")
-
-                    if st.form_submit_button("💾 儲存測量並進行運動醫學判讀", use_container_width=True):
-                        bf_save = float(bf_pct_in) if use_bf else None
-                        upsert_weight_log(target_athlete, team_code, log_date_in, weight_kg_in, bf_save, timing_in, notes_in.strip())
-                        st.success(f"已儲存 {log_date_in} 體重紀錄（{weight_kg_in:.1f} kg），運動醫學軌跡分析已同步更新！")
-                        st.rerun()
-
-                if logs_rows:
-                    st.markdown("---")
-                    st.markdown("##### 📋 歷史體重測量明細")
-                    sorted_desc = sorted(logs_rows, key=lambda x: (x[2], x[0]), reverse=True)
-                    table_rows = []
-                    for r in sorted_desc:
-                        _, _, l_dt, l_w, l_bf, l_tim, l_note, _ = r
-                        table_rows.append({
-                            "測量日期": l_dt,
-                            "體重 (kg)": f"{float(l_w):.1f}",
-                            "體脂率 (%)": f"{float(l_bf):.1f}%" if l_bf is not None else "-",
-                            "測量時機": l_tim,
-                            "備註": l_note if l_note else "-"
-                        })
-                    st.dataframe(pd.DataFrame(table_rows), use_container_width=True, hide_index=True)
-
-                    with st.expander("🗑️ 刪除單筆體重紀錄"):
-                        del_map = {f"{r[2]} ｜ {float(r[3]):.1f} kg ({r[5]})": r[0] for r in sorted_desc}
-                        sel_del_lbl = st.selectbox("選擇要刪除的紀錄：", list(del_map.keys()), key="wm_del_sel")
-                        if st.button("確認刪除此筆測量紀錄", key="btn_del_wlog"):
-                            delete_weight_log(del_map[sel_del_lbl])
-                            st.success("已刪除該筆體重紀錄")
+                        if st.form_submit_button("💾 儲存體重紀錄並進行運動醫學判讀", use_container_width=True):
+                            bf_store = round(float(bf_val), 1) if bf_val > 0 else None
+                            upsert_weight_log(target_wm_user, team_code, w_date, w_val, bf_store, w_timing, w_notes.strip())
+                            st.success(f"已成功儲存 {w_date} 體重紀錄（{w_val:.1f} kg）！")
                             st.rerun()
 
-            with tab_wm_goal:
-                st.subheader("設定競技體重目標與達成期限")
+                    if logs_rows:
+                        st.markdown("---")
+                        st.markdown("##### 📋 近期體重測量紀錄")
+                        for lr in reversed(logs_rows[-10:]):
+                            l_id, _, l_dt, l_w, l_bf, l_tm, l_nt, _ = lr
+                            bf_txt = f" ｜ 體脂 `{l_bf:.1f}%`" if l_bf is not None else ""
+                            nt_txt = f" ｜ 備註：{l_nt}" if l_nt else ""
+                            rc1, rc2 = st.columns([5, 1])
+                            with rc1:
+                                st.write(f"• 📅 **{l_dt}** ： **`{float(l_w):.1f} kg`**{bf_txt} ｜ `{l_tm}`{nt_txt}")
+                            with rc2:
+                                if st.button("🗑️ 刪除", key=f"del_wlog_{l_id}", use_container_width=True):
+                                    delete_weight_log(l_id)
+                                    st.rerun()
 
-                init_start_w = float(goal_row[2]) if goal_row else (float(logs_rows[-1][3]) if logs_rows else 60.0)
-                init_target_w = float(goal_row[4]) if goal_row else init_start_w
+            with tab_wm_goal:
+                st.subheader("🎯 目標體重與速率安全評估 Goal & Safe Rate Planner")
+                init_start_w = float(goal_row[2]) if goal_row else (float(logs_rows[0][3]) if logs_rows else 65.0)
+                init_target_w = float(goal_row[4]) if goal_row else round(init_start_w - 1.5, 1)
                 try:
-                    init_start_d = datetime.datetime.strptime(str(goal_row[3]), "%Y-%m-%d").date() if goal_row else datetime.date.today()
+                    init_s_date = datetime.datetime.strptime(str(goal_row[3]), "%Y-%m-%d").date() if goal_row else datetime.date.today()
+                    init_t_date = datetime.datetime.strptime(str(goal_row[5]), "%Y-%m-%d").date() if goal_row else (datetime.date.today() + datetime.timedelta(days=28))
                 except Exception:
-                    init_start_d = datetime.date.today()
-                try:
-                    init_target_d = datetime.datetime.strptime(str(goal_row[5]), "%Y-%m-%d").date() if goal_row else (datetime.date.today() + datetime.timedelta(days=42))
-                except Exception:
-                    init_target_d = datetime.date.today() + datetime.timedelta(days=42)
+                    init_s_date = datetime.date.today()
+                    init_t_date = init_s_date + datetime.timedelta(days=28)
                 init_g_notes = goal_row[6] if goal_row else ""
 
-                cg1, cg2 = st.columns(2)
-                with cg1:
-                    in_start_w = st.number_input("起始基準體重 Start Weight (kg)", min_value=30.0, max_value=150.0, value=init_start_w, step=0.1, format="%.1f", key="wm_g_sw")
-                    in_start_d = st.date_input("計畫起始日期 Start Date", value=init_start_d, key="wm_g_sd")
-                with cg2:
-                    in_target_w = st.number_input("目標體重 Target Weight (kg)", min_value=30.0, max_value=150.0, value=init_target_w, step=0.1, format="%.1f", key="wm_g_tw")
-                    in_target_d = st.date_input("目標達成日期 Target Date", value=init_target_d, key="wm_g_td")
+                if not is_staff:
+                    with st.form("form_weight_goal"):
+                        gc1, gc2 = st.columns(2)
+                        with gc1:
+                            g_start_w = st.number_input("起始基準體重 Start Weight (kg)", min_value=30.0, max_value=160.0, value=init_start_w, step=0.1, format="%.1f")
+                            g_start_date = st.date_input("計畫開始日期 Start Date", value=init_s_date)
+                        with gc2:
+                            g_target_w = st.number_input("目標競技體重 Target Weight (kg)", min_value=30.0, max_value=160.0, value=init_target_w, step=0.1, format="%.1f")
+                            g_target_date = st.date_input("預計達成日期 Target Date", value=init_t_date)
+                        g_notes = st.text_area("階段目標說明 (例：全中運賽前減脂期、冬訓增肌期...)", value=init_g_notes, height=80)
 
-                in_g_notes = st.text_input("階段目標說明（例：全大運賽前最佳競技體重、冬訓增肌期目標等）", value=init_g_notes, key="wm_g_notes")
+                        if st.form_submit_button("✅ 儲存並計算運動醫學安全速率", use_container_width=True):
+                            if g_target_date <= g_start_date:
+                                st.error("預計達成日期必須晚於計畫開始日期！")
+                            else:
+                                upsert_weight_goal(target_wm_user, team_code, g_start_w, g_start_date, g_target_w, g_target_date, g_notes.strip())
+                                st.success("目標體重與安全速率軌跡已更新！")
+                                st.rerun()
 
-                if in_target_d <= in_start_d:
-                    st.error("⚠️ 目標達成日期必須晚於計畫起始日期。")
-                else:
-                    plan_eval = evaluate_weight_goal_plan(in_start_w, in_target_w, in_start_d, in_target_d)
-                    st.markdown("##### 🩺 運動醫學計畫合理性即時預審")
-                    eval_text = f"**{plan_eval['badge']}**（共 {plan_eval['total_weeks']} 週，總變化 {plan_eval['delta_w']:+.1f} kg）\n\n{plan_eval['summary']}"
-                    if plan_eval["level"] == "success":
-                        st.success(eval_text)
-                    elif plan_eval["level"] == "warning":
-                        st.warning(eval_text)
-                    elif plan_eval["level"] == "error":
-                        st.error(eval_text)
+                if goal_row:
+                    plan_eval = evaluate_weight_goal_plan(goal_row[2], goal_row[4], goal_row[3], goal_row[5])
+                    st.markdown("##### 🩺 運動醫學計畫速率評估結果")
+                    p_lvl = plan_eval["level"]
+                    p_msg = f"**{plan_eval['badge']}**\n\n{plan_eval['summary']}"
+                    if p_lvl == "success":
+                        st.success(p_msg)
+                    elif p_lvl == "warning":
+                        st.warning(p_msg)
+                    elif p_lvl == "error":
+                        st.error(p_msg)
                     else:
-                        st.info(eval_text)
-
-                    if st.button("🎯 儲存 / 更新體重目標計畫 Save Weight Goal", use_container_width=True, key="btn_save_wgoal"):
-                        upsert_weight_goal(target_athlete, team_code, in_start_w, in_start_d, in_target_w, in_target_d, in_g_notes.strip())
-                        st.success("體重目標計畫已成功儲存！")
-                        st.rerun()
+                        st.info(p_msg)
+                    if goal_row[6]:
+                        st.caption(f"📌 階段目標備註：{goal_row[6]}")
+                elif is_staff:
+                    st.info("該選手尚未設定目標體重計畫。")
 
             with tab_wm_chart:
-                st.subheader("體重變化趨勢、7 日移動平均線與目標理想軌跡")
-                if not logs_rows and not goal_row:
-                    st.info("尚無數據可繪製圖表，請先新增體重紀錄或設定目標。")
+                st.subheader(f"📈 {target_wm_user} 體重變化趨勢與理論目標軌跡圖")
+                if not logs_rows:
+                    st.info("尚無體重測量紀錄可繪製折線圖。")
                 else:
-                    sorted_logs = sorted(logs_rows, key=lambda x: (x[2], x[0]))
-                    chart_records = []
+                    df_w = pd.DataFrame([
+                        {
+                            "Date": r[2],
+                            "Weight_kg": float(r[3]),
+                            "BodyFat_pct": r[4],
+                            "Timing": r[5],
+                            "Notes": r[6]
+                        }
+                        for r in logs_rows
+                    ])
+                    df_w["MA7_kg"] = df_w["Weight_kg"].rolling(window=7, min_periods=1).mean().round(2)
 
-                    if sorted_logs:
-                        weights_seq = [float(r[3]) for r in sorted_logs]
-                        for idx, r in enumerate(sorted_logs):
-                            w_val = float(r[3])
-                            win_start = max(0, idx - 6)
-                            ma7_val = sum(weights_seq[win_start:idx+1]) / (idx - win_start + 1)
-                            chart_records.append({
-                                "Date": str(r[2]),
-                                "Series": "每日測量體重 (kg)",
-                                "Weight": round(w_val, 2)
-                            })
-                            chart_records.append({
-                                "Date": str(r[2]),
-                                "Series": "7 日移動平均線 (排除水分波動)",
-                                "Weight": round(ma7_val, 2)
-                            })
+                    chart_layers = []
 
-                    if goal_row:
-                        _, _, g_sw, g_sd, g_tw, g_td, _, _ = goal_row
-                        chart_records.append({
-                            "Date": str(g_sd),
-                            "Series": "運動醫學目標理想軌跡",
-                            "Weight": round(float(g_sw), 2)
-                        })
-                        chart_records.append({
-                            "Date": str(g_td),
-                            "Series": "運動醫學目標理想軌跡",
-                            "Weight": round(float(g_tw), 2)
-                        })
-
-                    df_w_chart = pd.DataFrame(chart_records)
-                    w_min = df_w_chart["Weight"].min() - 1.5
-                    w_max = df_w_chart["Weight"].max() + 1.5
-
-                    line_chart = alt.Chart(df_w_chart).mark_line(point=True).encode(
-                        x=alt.X("Date:T", title="日期 Date"),
-                        y=alt.Y("Weight:Q", title="體重 (kg)", scale=alt.Scale(domain=[w_min, w_max])),
-                        color=alt.Color(
-                            "Series:N",
-                            title="數據曲線",
-                            scale=alt.Scale(
-                                domain=["每日測量體重 (kg)", "7 日移動平均線 (排除水分波動)", "運動醫學目標理想軌跡"],
-                                range=["#94a3b8", "#2563eb", "#059669"]
-                            )
-                        ),
-                        strokeDash=alt.StrokeDash(
-                            "Series:N",
-                            scale=alt.Scale(
-                                domain=["每日測量體重 (kg)", "7 日移動平均線 (排除水分波動)", "運動醫學目標理想軌跡"],
-                                range=[[1, 0], [1, 0], [6, 4]]
-                            ),
-                            legend=None
-                        ),
+                    # 每日測量體重點線
+                    line_daily = alt.Chart(df_w).mark_line(point=True, color="#2563eb", strokeWidth=2).encode(
+                        x=alt.X("Date:N", title="測量日期 Date", sort="ascending"),
+                        y=alt.Y("Weight_kg:Q", title="體重 Weight (kg)", scale=alt.Scale(zero=False)),
                         tooltip=[
-                            alt.Tooltip("Date:T", title="日期", format="%Y-%m-%d"),
-                            alt.Tooltip("Series:N", title="曲線"),
-                            alt.Tooltip("Weight:Q", title="體重 (kg)")
+                            alt.Tooltip("Date:N", title="日期"),
+                            alt.Tooltip("Weight_kg:Q", title="當日體重 (kg)"),
+                            alt.Tooltip("MA7_kg:Q", title="7日均線 (kg)"),
+                            alt.Tooltip("Timing:N", title="測量時機"),
+                            alt.Tooltip("Notes:N", title="備註")
                         ]
-                    ).properties(height=420)
+                    )
+                    chart_layers.append(line_daily)
 
-                    st.altair_chart(line_chart, use_container_width=True)
-                    st.caption("判讀說明：灰色實線為每日單次測量值（易受肝醣與汗水影響）；藍色實線為 7 日移動平均線，應沿綠色虛線（目標理想軌跡）穩健推進。")
+                    # 7日移動平均線（過濾單日水分波動）
+                    line_ma7 = alt.Chart(df_w).mark_line(color="#059669", strokeWidth=3, strokeDash=[4, 2]).encode(
+                        x=alt.X("Date:N", sort="ascending"),
+                        y=alt.Y("MA7_kg:Q"),
+                        tooltip=[
+                            alt.Tooltip("Date:N", title="日期"),
+                            alt.Tooltip("MA7_kg:Q", title="7日移動平均 (kg)")
+                        ]
+                    )
+                    chart_layers.append(line_ma7)
+
+                    # 目標體重水平參考線
+                    if goal_row:
+                        target_val = float(goal_row[4])
+                        df_target_line = pd.DataFrame({"Target_kg": [target_val]})
+                        rule_target = alt.Chart(df_target_line).mark_rule(color="#dc2626", strokeDash=[6, 4], strokeWidth=2).encode(
+                            y="Target_kg:Q"
+                        )
+                        chart_layers.append(rule_target)
+
+                    st.caption("🔵 **藍實線**：每日測量體重 ｜ 🟢 **綠虛線**：7 日移動平均線（過濾單日水分波動） ｜ 🔴 **紅虛線**：目標競技體重")
+                    st.altair_chart(alt.layer(*chart_layers).properties(height=380), use_container_width=True)
+
+                    st.markdown("##### 📊 歷史測量明細表")
+                    disp_df = df_w[["Date", "Weight_kg", "MA7_kg", "BodyFat_pct", "Timing", "Notes"]].iloc[::-1].rename(columns={
+                        "Date": "日期",
+                        "Weight_kg": "測量體重 (kg)",
+                        "MA7_kg": "7日移動平均 (kg)",
+                        "BodyFat_pct": "體脂率 (%)",
+                        "Timing": "測量時機",
+                        "Notes": "備註"
+                    })
+                    st.dataframe(disp_df, use_container_width=True, hide_index=True)
 
             with tab_wm_lit:
-                st.subheader("📚 本模組採用之運動醫學與運動營養文獻依據")
+                st.subheader("📚 運動醫學與競技體重監控文獻依據")
                 st.markdown("""
-                本系統之體重目標速率評估、安全警戒門檻與 7 日移動平均判讀邏輯，均依據國際運動醫學與田徑營養共識建立：
+                本模組之體重速率評估、單日水分波動提醒與競技狀態判讀，係依據下列國際運動醫學與田徑營養學共識建立：
 
-                1. **Garthe, I., Raastad, T., Refsnes, P. E., Koivisto, A., & Sundgot-Borgen, J. (2011).**  
-                   *Effect of two different weight-loss rates on body composition and strength and power-related performance in elite athletes.*  
-                   **International Journal of Sport Nutrition and Exercise Metabolism**, 21(2), 97–104.  
-                   - **核心實證**：菁英運動員採用**每週 0.5%–0.7% 體重**的漸進減重速率，不僅能維持瘦體組織（肌肉量），甚至能提升下肢最大肌力與垂直跳躍爆發力；反之，每週減重達 **1.0%–1.4% 體重**的快速減重組，會導致瘦體組織顯著流失且爆發力成長受阻。
+                1. **安全減重速率與瘦體組織保留（0.5% – 0.7% 體重/週）**
+                   * **文獻**：*Garthe, I., Raastad, T., Refsnes, P. E., Koivisto, A., & Sundgot-Borgen, J. (2011).* Effect of two different weight-loss rates on body composition and strength and power-related performance in elite athletes. *International Journal of Sport Nutrition and Exercise Metabolism*, 21(2), 97–104.
+                   * **核心結論**：菁英運動員採用較慢速減重（約 **0.7% BW/週**）相較於快速減重（約 1.4% BW/週），能完整保留甚至增加瘦體組織（Lean Body Mass），並顯著維持跳躍高度與最大肌力表現——這對跨欄起跑與攻欄爆發力至關重要。
 
-                2. **Mountjoy, M., Ackerman, K. E., Bailey, D. M., Burke, L. M., Constantini, N., Hackney, A. C., ... & Budgett, R. (2023).**  
-                   *2023 International Olympic Committee's (IOC) consensus statement on Relative Energy Deficiency in Sport (REDs).*  
-                   **British Journal of Sports Medicine**, 57(17), 1073–1097.  
-                   - **核心實證**：長期或過度的能量赤字（Low Energy Availability, LEA）會引發運動員相對能量不足（REDs），導致荷爾蒙失調、骨密度下降（疲勞性骨折風險上升）、免疫力受損與無氧速度耐力衰退。
+                2. **運動員相對能量不足（REDs）與快速減重風險**
+                   * **文獻**：*Mountjoy, M., Ackerman, K. E., Bailey, D. M., et al. (2023).* 2023 International Olympic Committee's (IOC) consensus statement on Relative Energy Deficiency in Sport (REDs). *British Journal of Sports Medicine*, 57(17), 1073–1097.
+                   * **核心結論**：過度能量赤字與快速體重下降會導致內分泌失調、骨密度下降（疲勞性骨折風險上升）、肌肉合成受阻與專項無氧速度表現衰退。
 
-                3. **Burke, L. M., Castell, L. M., Casa, D. J., Close, G. L., Costa, R. J., Desbrow, B., ... & Stellingwerff, T. (2019).**  
-                   *International Association of Athletics Federations (World Athletics) Consensus Statement 2019: Nutrition for Athletics.*  
-                   **International Journal of Sport Nutrition and Exercise Metabolism**, 29(2), 73–84.  
-                   - **核心實證**：短跑與跨欄項目高度依賴功率體重比（Power-to-Weight Ratio）與磷酸肌酸／糖酵解系統；賽季中應避免大幅度快速減重，並透過標準化測量時機（晨起空腹如廁後）與多日移動平均來區分真實組織變化與肝醣／水分波動（1g 肝醣約結合 3g 水分）。
+                3. **田徑選手水合狀態、肝醣結合水與每日體重波動（±0.5% – 1.5%）**
+                   * **文獻**：*Burke, L. M., Castell, L. M., Casa, D. J., et al. (2019).* International Association of Athletics Federations (World Athletics) Consensus Statement 2019: Nutrition for Athletics. *International Journal of Sport Nutrition and Exercise Metabolism*, 29(2), 73–84.
+                   * **核心結論**：每 1 公克肌肉肝醣約結合 3 公克水分，且高強度田徑訓練會造成顯著汗液流失。每日體重出現 **±0.5%～1.5%** 的波動多屬水分與肝醣調節，判讀真實身體組成變化應觀察 **7 日移動平均線** 並固定於晨起空腹測量。
 
-                4. **Aragon, A. A., Schoenfeld, B. J., Wildman, R., Kleiner, S., VanDusseldorp, T., Taylor, L., ... & Antonio, J. (2017).**  
-                   *International Society of Sports Nutrition (ISSN) position stand: diets and body composition.*  
-                   **Journal of the International Society of Sports Nutrition**, 14(1), 16.  
-                   - **核心實證**：受訓運動員在增肌期建議將每週增重控制在 **0.25%–0.5% 體重/週**，過快的體重上升會使多餘熱量轉化為非功能性脂肪，進而降低短跑與過欄起跳的加速度效率。
+                4. **運動員增肌期速率控制（0.25% – 0.5% 體重/週）**
+                   * **文獻**：*Aragon, A. A., Schoenfeld, B. J., Wildman, R., et al. (2017).* International Society of Sports Nutrition (ISSN) position stand: diets and body composition. *Journal of the International Society of Sports Nutrition*, 14, 16.
+                   * **核心結論**：受訓運動員每週增重控制在 **0.25%～0.5% 體重** 以內，可最大化促進骨骼肌肥大並抑制過多脂肪堆積，維持短距離跨欄所需的最佳功率體重比（Power-to-Weight Ratio）。
                 """)
 
 # ==================== 【頁面 9：歷史分析紀錄】 ====================
 elif page == "歷史分析紀錄 History Records":
+    st.title("歷史分析與紀錄管理 History Records")
+    st.markdown("---")
+
     if st.session_state["user_info"] is None:
-        st.title("歷史分析資料庫 Historical Analysis Records")
-        st.markdown("---")
         st.warning("請先在左側邊欄登入帳號 Please Login in Sidebar First")
     else:
         u = st.session_state["user_info"]
         role = u["role"]
-        team_code = u["team_code"]
+        is_staff = (role in ["coach", "trainer"])
 
-        if role in ["coach", "trainer"]:
-            st.title("團隊歷史分析資料庫 Team Historical Analysis Records")
-        else:
-            st.title("歷史分析資料庫 Historical Analysis Records")
-        st.markdown("---")
-
-        if role in ["coach", "trainer"]:
-            team_athletes = get_team_athletes(team_code)
-            filter_user = st.selectbox("篩選隊內成員 Filter Athlete", ["全隊所有人 Entire Team"] + team_athletes)
+        if is_staff:
+            team_athletes = get_team_athletes(u["team_code"])
+            filter_user = st.selectbox("篩選選手紀錄 Filter Athlete", ["全隊所有人 Entire Team"] + team_athletes)
             query_user = None if filter_user == "全隊所有人 Entire Team" else filter_user
-            all_records = get_records_with_folder(team_code, username=query_user)
+            all_records = get_records_with_folder(u["team_code"], username=query_user)
         else:
-            all_records = get_records_with_folder(team_code, username=u["username"])
+            all_records = get_records_with_folder(u["team_code"], username=u["username"])
 
-        custom_folders = get_record_folders(team_code)
-        all_folder_choices = ["未分類"] + custom_folders
+        custom_folders = get_record_folders(u["team_code"])
 
-        folder_counts = {"全部紀錄": len(all_records), "未分類": 0}
-        for cf in custom_folders:
-            folder_counts[cf] = 0
-        for r in all_records:
-            f_name = r[6] if r[6] in folder_counts else "未分類"
-            folder_counts[f_name] = folder_counts.get(f_name, 0) + 1
-
-        if "active_record_folder" not in st.session_state:
-            st.session_state["active_record_folder"] = "全部紀錄"
-        if st.session_state["active_record_folder"] not in folder_counts:
-            st.session_state["active_record_folder"] = "全部紀錄"
-
-        with st.expander("📁 資料夾管理（建立新資料夾 / 重新命名 / 刪除）", expanded=False):
-            cm1, cm2 = st.columns([3, 1])
-            with cm1:
-                new_folder_input = st.text_input(
-                    "新資料夾名稱",
-                    placeholder="輸入資料夾名稱（例如：全大運備戰、攻欄起跳專項、欄間節奏追蹤）",
-                    label_visibility="collapsed",
-                    key="inp_new_rec_folder"
-                )
-            with cm2:
-                if st.button("➕ 建立資料夾", key="btn_create_rec_folder", use_container_width=True):
-                    ok_f, msg_f = create_record_folder(team_code, u["username"], new_folder_input)
-                    if ok_f:
-                        st.session_state["active_record_folder"] = new_folder_input.strip()
-                        st.success(msg_f)
+        # 資料夾新增與管理區
+        with st.expander("📁 資料夾管理 Folder Management（新增 / 重新命名 / 刪除資料夾）", expanded=False):
+            fc1, fc2 = st.columns(2)
+            with fc1:
+                st.markdown("##### ➕ 新增資料夾")
+                new_f_name = st.text_input("輸入新資料夾名稱", placeholder="例：2026全中運備戰、起跑攻欄技術、賽前測驗...", key="inp_new_folder_name")
+                if st.button("建立資料夾 Create Folder", key="btn_create_folder", use_container_width=True):
+                    ok, msg = create_record_folder(u["team_code"], u["username"], new_f_name)
+                    if ok:
+                        st.success(msg)
                         st.rerun()
                     else:
-                        st.warning(msg_f)
+                        st.error(msg)
 
-            if custom_folders:
-                st.markdown("---")
-                rm1, rm2, rm3, rm4 = st.columns([1.5, 1.5, 1, 1])
-                with rm1:
-                    target_manage_folder = st.selectbox("選擇自訂資料夾：", custom_folders, key="sel_manage_folder")
-                with rm2:
-                    rename_input = st.text_input("新名稱", value=target_manage_folder, label_visibility="collapsed", key="inp_rename_folder")
-                with rm3:
-                    if st.button("✏️ 重新命名", key="btn_rename_folder", use_container_width=True):
-                        ok_r, msg_r = rename_record_folder(team_code, target_manage_folder, rename_input)
-                        if ok_r:
-                            if st.session_state["active_record_folder"] == target_manage_folder:
-                                st.session_state["active_record_folder"] = rename_input.strip()
-                            st.success(msg_r)
-                            st.rerun()
-                        else:
-                            st.warning(msg_r)
-                with rm4:
-                    if st.button("🗑️ 刪除資料夾", key="btn_del_folder", use_container_width=True):
-                        delete_record_folder(team_code, target_manage_folder)
-                        if st.session_state["active_record_folder"] == target_manage_folder:
-                            st.session_state["active_record_folder"] = "全部紀錄"
-                        st.success(f"已刪除資料夾「{target_manage_folder}」，內部紀錄已移回「未分類」")
+            with fc2:
+                st.markdown("##### 🛠️ 管理現有資料夾")
+                if not custom_folders:
+                    st.caption("目前尚未建立任何自訂資料夾。")
+                else:
+                    sel_manage_folder = st.selectbox("選擇要管理的資料夾", custom_folders, key="sel_manage_folder")
+                    ren_col1, ren_col2 = st.columns([2, 1])
+                    with ren_col1:
+                        rename_f_input = st.text_input("新資料夾名稱", value=sel_manage_folder, label_visibility="collapsed", key="inp_rename_folder")
+                    with ren_col2:
+                        if st.button("✏️ 更名", key="btn_rename_folder", use_container_width=True):
+                            ok, msg = rename_record_folder(u["team_code"], sel_manage_folder, rename_f_input)
+                            if ok:
+                                st.success(msg)
+                                st.rerun()
+                            else:
+                                st.error(msg)
+
+                    if st.button(f"🗑️ 刪除「{sel_manage_folder}」（內部紀錄將自動移至「未分類」）", key="btn_del_folder", use_container_width=True):
+                        delete_record_folder(u["team_code"], sel_manage_folder)
+                        st.success(f"已刪除資料夾「{sel_manage_folder}」，原有紀錄已安全保留於「未分類」。")
                         st.rerun()
 
-        st.markdown("##### 📂 資料夾分頁")
-        nav_folders = ["全部紀錄", "未分類"] + custom_folders
-        cols_per_row = 4
-        for row_start in range(0, len(nav_folders), cols_per_row):
-            row_items = nav_folders[row_start:row_start + cols_per_row]
-            f_cols = st.columns(cols_per_row)
-            for idx_col, f_label in enumerate(row_items):
-                is_active = (st.session_state["active_record_folder"] == f_label)
-                icon = "📚" if f_label == "全部紀錄" else ("📥" if f_label == "未分類" else "📂")
-                prefix = "✅ " if is_active else ""
-                btn_text = f"{prefix}{icon} {f_label} ({folder_counts.get(f_label, 0)})"
-                with f_cols[idx_col]:
-                    if st.button(btn_text, key=f"nav_folder_btn_{f_label}", use_container_width=True):
-                        st.session_state["active_record_folder"] = f_label
-                        st.rerun()
-
-        st.markdown("---")
-        current_folder = st.session_state["active_record_folder"]
-
-        if current_folder == "全部紀錄":
-            records = all_records
-            st.subheader(f"📚 全部紀錄（共 {len(records)} 筆）")
+        if not all_records:
+            st.info("目前資料庫中尚無任何已儲存的分析紀錄。")
         else:
-            records = [r for r in all_records if (r[6] if r[6] in folder_counts else "未分類") == current_folder]
-            hdr_c1, hdr_c2 = st.columns([4, 1])
-            with hdr_c1:
-                st.subheader(f"📂 {current_folder}（共 {len(records)} 筆）")
-            with hdr_c2:
-                if st.button("← 返回全部紀錄", key="btn_back_all_records", use_container_width=True):
-                    st.session_state["active_record_folder"] = "全部紀錄"
-                    st.rerun()
+            # 統計各資料夾紀錄數量
+            folder_counts = {"全部紀錄": len(all_records), "未分類": 0}
+            for f in custom_folders:
+                folder_counts[f] = 0
 
-        if not records:
-            st.warning("尚無歷史紀錄 No Historical Records")
-        else:
-            for rec in records:
-                rec_id, rec_user, rec_mod, rec_title, rec_details_str, rec_time, rec_folder = rec
-                try: details = json.loads(rec_details_str)
-                except Exception: details = {"raw_text": rec_details_str}
+            for r in all_records:
+                f_tag = r[6] if len(r) > 6 and r[6] else "未分類"
+                if f_tag not in folder_counts:
+                    folder_counts[f_tag] = 0
+                folder_counts[f_tag] += 1
 
-                if not isinstance(details, dict):
-                    details = {"raw_text": str(details)}
+            tab_folder_names = ["全部紀錄", "未分類"] + custom_folders
+            tab_labels = [f"📂 {fname} ({folder_counts.get(fname, 0)})" for fname in tab_folder_names]
+            folder_tabs = st.tabs(tab_labels)
 
-                folder_badge = f" 📁 [{rec_folder}]" if current_folder == "全部紀錄" and rec_folder != "未分類" else ""
-                with st.expander(f"{rec_title}{folder_badge}"):
-                    mv_c1, mv_c2, _ = st.columns([1.8, 1, 2.2])
+            all_folder_choices = ["未分類"] + custom_folders
+
+            def render_record_card(rec, tab_prefix):
+                rec_id, rec_user, mod, title, details_str, ts, rec_folder = rec
+                try:
+                    details = json.loads(details_str)
+                except Exception:
+                    details = {"raw": details_str}
+
+                user_prefix = f"選手: {rec_user} ｜ " if is_staff else ""
+                folder_badge = f"📁 {rec_folder} ｜ " if tab_prefix == "全部紀錄" else ""
+                expander_label = f"{folder_badge}{user_prefix}[{ts}] {mod} - {title}"
+
+                with st.expander(expander_label):
+                    # 移動資料夾工具列
+                    mv_c1, mv_c2 = st.columns([3, 1])
                     with mv_c1:
-                        curr_idx = all_folder_choices.index(rec_folder) if rec_folder in all_folder_choices else 0
-                        target_mv_folder = st.selectbox(
-                            "所屬資料夾",
+                        cur_f_idx = all_folder_choices.index(rec_folder) if rec_folder in all_folder_choices else 0
+                        target_move_folder = st.selectbox(
+                            "所屬資料夾 Folder",
                             all_folder_choices,
-                            index=curr_idx,
-                            key=f"sel_mv_folder_{rec_id}",
-                            label_visibility="collapsed"
+                            index=cur_f_idx,
+                            key=f"mv_sel_{tab_prefix}_{rec_id}"
                         )
                     with mv_c2:
-                        if st.button("📂 移動資料夾", key=f"btn_mv_folder_{rec_id}", use_container_width=True):
-                            if target_mv_folder != rec_folder:
-                                move_record_to_folder(rec_id, target_mv_folder)
-                                st.success(f"已移動至「{target_mv_folder}」")
-                                st.rerun()
-
-                    if "image_b64" in details:
-                        st.image(details["image_b64"], caption="標記畫面快照", use_container_width=True)
-                    if "angle_metrics" in details:
-                        am = details["angle_metrics"]
-                        if isinstance(am, dict) and ("angle_A" in am or "angle_B" in am):
-                            st.write(f"• **影片 A 時間**：`{am.get('time_A', '-')}s` ｜ **影片 A 角度**：`{am.get('angle_A', '未量測')}°`")
-                            st.write(f"• **影片 B 時間**：`{am.get('time_B', '-')}s` ｜ **影片 B 角度**：`{am.get('angle_B', '未量測')}°`")
-                        else:
-                            angles = am.get("angles", []) if isinstance(am, dict) else am
-                            if isinstance(am, dict):
-                                if am.get("phase_tag"):
-                                    st.write(f"• **動作階段**：`{am.get('phase_tag')}` ｜ **時間**：`{am.get('rel_time_sec', '0.00')} 秒`")
-                            if isinstance(angles, list):
-                                for a in angles:
-                                    st.write(f"• **{a.get('name')}**：`{a.get('value')}`")
-                    if "timer_metrics" in details:
-                        tm = details["timer_metrics"]
-                        st.write(f"總累積時間：`{tm.get('total_time')} 秒`")
-                        if tm.get("splits"):
-                            df_splits = pd.DataFrame(tm["splits"]).rename(columns={
-                                "segment": "階段",
-                                "cum_sec": "累積時間 (秒)",
-                                "split_sec": "單段耗時 (秒)",
-                                "speed_ms": "平均速度 (m/s)"
-                            })
-                            col_order = ["階段", "累積時間 (秒)", "單段耗時 (秒)", "平均速度 (m/s)"]
-                            existing_cols = [c for c in col_order if c in df_splits.columns]
-                            other_cols = [c for c in df_splits.columns if c not in existing_cols]
-                            st.dataframe(df_splits[existing_cols + other_cols], use_container_width=True, hide_index=True)
-                    if "raw_text" in details:
-                        st.write(details["raw_text"])
+                        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                        if st.button("📂 移動資料夾", key=f"mv_btn_{tab_prefix}_{rec_id}", use_container_width=True):
+                            move_record_to_folder(rec_id, target_move_folder)
+                            st.success(f"已移動至「{target_move_folder}」")
+                            st.rerun()
 
                     st.markdown("---")
-                    st.markdown("**📝 動作分析筆記 Analysis Notes**")
-                    existing_note = details.get("user_notes", "")
-                    updated_note = st.text_area(
-                        "針對此紀錄撰寫或編輯筆記：",
-                        value=existing_note,
-                        height=95,
-                        placeholder="輸入動作技術心得、姿勢調整重點或教練講評...",
-                        key=f"rec_note_input_{rec_id}",
-                        label_visibility="collapsed"
-                    )
 
-                    btn_c1, btn_c2, _ = st.columns([1.2, 1.2, 2.6])
-                    with btn_c1:
-                        if st.button("💾 儲存筆記 Save Note", key=f"save_note_{rec_id}", use_container_width=True):
-                            details["user_notes"] = updated_note.strip()
+                    if "雙影同步" in mod:
+                        st.markdown("##### 雙影同步角度對比合成圖 Dual Video Angle Snapshot")
+                        if "image_b64" in details and details["image_b64"]:
+                            st.image(details["image_b64"], caption=title, use_container_width=True)
+                        am = details.get("angle_metrics", {})
+                        if isinstance(am, dict) and ("angle_A" in am or "angle_B" in am):
+                            st.write(f"• **影片 A (時間 {am.get('time_A', '-')}s)**：關節角度 `{am.get('angle_A') if am.get('angle_A') is not None else '未量測'}°`")
+                            st.write(f"• **影片 B (時間 {am.get('time_B', '-')}s)**：關節角度 `{am.get('angle_B') if am.get('angle_B') is not None else '未量測'}°`")
+
+                    elif "角度量測" in mod:
+                        col1, col2 = st.columns([1.2, 0.8])
+                        with col1:
+                            if "image_b64" in details:
+                                st.image(details["image_b64"], caption=title, use_container_width=True)
+                        with col2:
+                            am = details.get("angle_metrics", {})
+                            st.write(f"**相對時間**：`{am.get('rel_time_sec', '0.00')} 秒` (起點 T0: `{am.get('t0_sec', '0.00')} 秒`)")
+                            st.write(f"**關鍵動作階段**：`{am.get('phase_tag', '-')}`")
+                            angles = am.get("angles", []) if isinstance(am, dict) else am
+                            if isinstance(angles, list):
+                                for a in angles:
+                                    st.write(f"• **{a['name']}**：`{a['value']}`")
+
+                    elif "欄間秒數" in mod:
+                        tm = details.get("timer_metrics", {})
+                        st.write(f"**總累積耗時**：`{tm.get('total_time', '-')} 秒`")
+                        splits = tm.get("splits", [])
+                        if splits:
+                            st.table(pd.DataFrame(splits).rename(columns={
+                                "segment": "階段",
+                                "cum_sec": "累積時間(s)",
+                                "split_sec": "單段耗時(s)",
+                                "speed_ms": "平均速度(m/s)"
+                            }))
+
+                    st.markdown("---")
+                    current_note = details.get("user_notes", "") if isinstance(details, dict) else ""
+                    new_note = st.text_area("分析筆記與教練回饋 Notes & Feedback", value=current_note, height=90, key=f"note_{tab_prefix}_{rec_id}")
+                    if st.button("儲存筆記 Save Note", key=f"save_note_{tab_prefix}_{rec_id}"):
+                        if isinstance(details, dict):
+                            details["user_notes"] = new_note
                             update_record_details(rec_id, details)
-                            st.success("筆記已儲存！")
+                            st.success("筆記已成功儲存！")
                             st.rerun()
-                    with btn_c2:
-                        if st.button("🗑️ 刪除紀錄 Delete", key=f"del_{rec_id}", use_container_width=True):
+
+                    if is_staff or rec_user == u["username"]:
+                        if st.button("刪除紀錄 Delete Record", key=f"del_{tab_prefix}_{rec_id}"):
                             delete_record(rec_id)
                             st.rerun()
+
+            for idx, fname in enumerate(tab_folder_names):
+                with folder_tabs[idx]:
+                    if fname == "全部紀錄":
+                        filtered_recs = all_records
+                    else:
+                        filtered_recs = [r for r in all_records if (r[6] if len(r) > 6 and r[6] else "未分類") == fname]
+
+                    if not filtered_recs:
+                        st.info(f"資料夾「{fname}」中目前尚無紀錄。您可以在其他頁籤展開紀錄並將其移動至此資料夾！")
+                    else:
+                        for rec in filtered_recs:
+                            render_record_card(rec, fname)
