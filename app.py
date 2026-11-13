@@ -3966,7 +3966,7 @@ def render_training_log_history():
                                         del st.session_state[edit_inj_key]
                                     st.rerun()
 
-        if is_staff:
+if is_staff:
             render_training_log_history()
         else:
             tab_new_plan, tab_view_plan = st.tabs([
@@ -4069,11 +4069,12 @@ def render_training_log_history():
                                 to_delete_idx = idx
                         with c_sel3:
                             default_pts = item.get("pain_types", [])
-                            if not isinstance(default_pts, list): default_pts = []
+                            if not isinstance(default_pts, list):
+                                default_pts = []
                             st.markdown('<span class="pain-nature-anchor"></span>', unsafe_allow_html=True)
                             selected_pain_types = st.multiselect(
-                                f"疼痛性質 (可多選)", 
-                                options=PAIN_NATURE_OPTIONS, 
+                                f"疼痛性質 (可多選)",
+                                options=PAIN_NATURE_OPTIONS,
                                 default=[p for p in default_pts if p in PAIN_NATURE_OPTIONS],
                                 key=f"sel_ptypes_{idx}"
                             )
@@ -4109,14 +4110,14 @@ def render_training_log_history():
                 if st.button("儲存訓練日誌 Save Training Log", key="btn_save_training_log", use_container_width=True):
                     if content.strip():
                         extra_log_info = {
-                            "duration_min": duration_min, 
-                            "rpe_feeling": rpe_feeling, 
-                            "fatigue_score": fatigue_score, 
+                            "duration_min": duration_min,
+                            "rpe_feeling": rpe_feeling,
+                            "fatigue_score": fatigue_score,
                             "bedtime": bedtime.strftime("%H:%M"),
                             "waketime": waketime.strftime("%H:%M"),
-                            "sleep_hours": sleep_hours, 
+                            "sleep_hours": sleep_hours,
                             "sleep_mins": sleep_mins,
-                            "total_sleep_hr": round(total_sleep_hr, 2), 
+                            "total_sleep_hr": round(total_sleep_hr, 2),
                             "restorative_sleep_pct": restorative_sleep_pct,
                             "resting_hr": resting_hr,
                             "menstrual_period": menstrual_period,
@@ -4133,7 +4134,7 @@ def render_training_log_history():
                             rpe_feeling,
                             json.dumps(extra_log_info, ensure_ascii=False)
                         )
-                        
+
                         if "dyn_injuries_user" in st.session_state:
                             del st.session_state["dyn_injuries_user"]
                         if "dyn_injuries" in st.session_state:
