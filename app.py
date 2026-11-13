@@ -4596,7 +4596,7 @@ elif page == "歷史分析紀錄 History Records":
 
                 user_prefix = f"選手: {rec_user} ｜ " if is_staff else ""
                 folder_badge = f"📁 {rec_folder} ｜ " if tab_prefix == "全部紀錄" else ""
-                expander_label = f"{folder_badge}{user_prefix}[{ts}] {mod} - {title}"
+                expander_label = f"{folder_badge}{user_prefix}{mod} - {title}"
 
                 with st.expander(expander_label):
                     # 移動資料夾工具列
