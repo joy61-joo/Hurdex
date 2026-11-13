@@ -152,14 +152,12 @@ def evaluate_measurement_progress(goal_row, logs_rows):
     except Exception:
         latest_dt = datetime.date.today()
 
-    # 計算最近 7 筆（或 7 天內）移動平均，過濾單日水分波動
     recent_7 = sorted_logs[-7:]
     ma7_w = round(sum(float(x[3]) for x in recent_7) / len(recent_7), 2)
     prev_w = float(sorted_logs[-2][3]) if len(sorted_logs) >= 2 else start_w
     daily_diff = round(latest_w - prev_w, 2)
     daily_diff_pct = (daily_diff / prev_w * 100.0) if prev_w > 0 else 0.0
 
-    # 總進度計算
     total_goal_diff = target_w - start_w
     current_diff = latest_w - start_w
     remaining_w = round(target_w - latest_w, 2)
@@ -171,14 +169,12 @@ def evaluate_measurement_progress(goal_row, logs_rows):
     else:
         progress_pct = 100.0 if abs(latest_w - target_w) <= 0.5 else 0.0
 
-    # 計算理論今日應達體重 (Linear Trajectory)
     total_span_days = max((t_dt - s_dt).days, 1)
     elapsed_days = max((latest_dt - s_dt).days, 0)
     ratio_time = min(1.0, elapsed_days / total_span_days)
     expected_today_w = round(start_w + total_goal_diff * ratio_time, 2)
     vs_expected = round(latest_w - expected_today_w, 2)
 
-    # 實際平均每週變化率 (從起始日或第一筆紀錄起算)
     try:
         first_dt = datetime.datetime.strptime(str(sorted_logs[0][2]), "%Y-%m-%d").date()
     except Exception:
@@ -188,11 +184,9 @@ def evaluate_measurement_progress(goal_row, logs_rows):
     actual_weekly_kg = (latest_w - start_w) / elapsed_weeks
     actual_weekly_pct = (actual_weekly_kg / start_w) * 100.0 if start_w > 0 else 0.0
 
-    # 剩餘天數所需每週速率
     req_rem_weekly_kg = remaining_w / weeks_left
     req_rem_weekly_pct = (req_rem_weekly_kg / latest_w) * 100.0 if latest_w > 0 else 0.0
 
-    # 運動醫學文獻判讀邏輯
     is_loss_goal = total_goal_diff < -0.2
     is_gain_goal = total_goal_diff > 0.2
 
@@ -204,7 +198,6 @@ def evaluate_measurement_progress(goal_row, logs_rows):
             f"依據 *World Athletics (2019)* 共識，接下來請維持穩定的碳水與蛋白質攝取，只要每日波動在 **±0.5%～1.0%（約 ±{latest_w*0.008:.1f} kg）** 內皆屬正常肝醣與水分變化。"
         )
     elif is_loss_goal:
-        # 目標是減重 (total_goal_diff < 0)
         if latest_w > start_w + 0.3 and ma7_w > start_w + 0.2:
             status_level = "error"
             status_title = "⚠️ 目前趨勢暫時偏離減重目標方向"
@@ -243,7 +236,6 @@ def evaluate_measurement_progress(goal_row, logs_rows):
                 f"若要在 **{target_date_str}** 準時達標，剩餘期間需維持每週減少 **{abs(req_rem_weekly_kg):.2f} kg（{abs(req_rem_weekly_pct):.2f}% 體重/週）**，{safe_note}"
             )
     elif is_gain_goal:
-        # 目標是增肌增重 (total_goal_diff > 0)
         if latest_w < start_w - 0.3 and ma7_w < start_w - 0.2:
             status_level = "error"
             status_title = "⚠️ 目前趨勢暫時偏離增重目標方向"
@@ -276,7 +268,6 @@ def evaluate_measurement_progress(goal_row, logs_rows):
                 f"剩餘期間建議維持每週增加 **+{req_rem_weekly_kg:.2f} kg（{req_rem_weekly_pct:.2f}% 體重/週）**。"
             )
     else:
-        # 目標是維持體重
         fluct_pct = abs(latest_w - target_w) / target_w * 100.0 if target_w > 0 else 0.0
         if fluct_pct <= 1.2:
             status_level = "success"
@@ -293,7 +284,6 @@ def evaluate_measurement_progress(goal_row, logs_rows):
                 f"若為連續多日（7日均線 **{ma7_w:.1f} kg**）偏移，建議檢視近期訓練量與碳水／水分補充是否失衡。"
             )
 
-    # 補充單日劇烈波動提示 (World Athletics 2019)
     water_note = ""
     if len(sorted_logs) >= 2 and abs(daily_diff_pct) >= 1.5:
         water_note = (
@@ -441,133 +431,150 @@ def generate_random_team_code(length=6):
     rand_str = ''.join(random.choices(string.ascii_uppercase + string.digits, k=length-2))
     return f"{prefix}{rand_str}"
 
+def _create_table_safe(c, table_name, create_sql):
+    c.execute("SELECT to_regclass(%s)", (f"public.{table_name}",))
+    if c.fetchone()[0] is None:
+        c.execute(f"DROP TYPE IF EXISTS public.{table_name} CASCADE;")
+        c.execute(create_sql)
+
+@st.cache_resource
 def init_db():
     conn = get_db_connection()
-    c = conn.cursor()
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            username TEXT PRIMARY KEY,
-            password_hash TEXT NOT NULL,
-            role TEXT NOT NULL,
-            team_code TEXT NOT NULL DEFAULT 'DEFAULT_TEAM',
-            email TEXT NOT NULL DEFAULT '',
-            created_at TEXT NOT NULL DEFAULT ''
-        )
-    """)
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS reset_tokens (
-            username TEXT PRIMARY KEY,
-            otp_code TEXT NOT NULL,
-            expires_at TEXT NOT NULL
-        )
-    """)
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS records (
-            id SERIAL PRIMARY KEY,
-            username TEXT NOT NULL,
-            team_code TEXT NOT NULL DEFAULT 'DEFAULT_TEAM',
-            module TEXT NOT NULL,
-            title TEXT NOT NULL,
-            details TEXT NOT NULL,
-            timestamp TEXT NOT NULL,
-            FOREIGN KEY (username) REFERENCES users (username)
-        )
-    """)
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS training_plans (
-            id SERIAL PRIMARY KEY,
-            username TEXT NOT NULL,
-            team_code TEXT NOT NULL DEFAULT 'DEFAULT_TEAM',
-            plan_date TEXT NOT NULL,
-            category TEXT NOT NULL,
-            content TEXT NOT NULL,
-            intensity TEXT NOT NULL,
-            notes TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        )
-    """)
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS competitions (
-            id SERIAL PRIMARY KEY,
-            username TEXT NOT NULL,
-            team_code TEXT NOT NULL DEFAULT 'DEFAULT_TEAM',
-            comp_name TEXT NOT NULL,
-            comp_date TEXT NOT NULL,
-            end_date TEXT DEFAULT '',
-            location TEXT DEFAULT '',
-            notes TEXT DEFAULT '',
-            created_at TEXT NOT NULL
-        )
-    """)
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS injury_feedbacks (
-            id SERIAL PRIMARY KEY,
-            athlete_username TEXT NOT NULL,
-            trainer_username TEXT NOT NULL,
-            team_code TEXT NOT NULL,
-            feedback_date TEXT NOT NULL,
-            body_part TEXT NOT NULL,
-            status_tag TEXT NOT NULL,
-            treatment_advice TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        )
-    """)
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS injury_feedback_replies (
-            id SERIAL PRIMARY KEY,
-            feedback_id INTEGER NOT NULL,
-            sender_username TEXT NOT NULL,
-            sender_role TEXT NOT NULL,
-            reply_text TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        )
-    """)
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS weight_goals (
-            username TEXT PRIMARY KEY,
-            team_code TEXT NOT NULL DEFAULT 'DEFAULT_TEAM',
-            start_weight REAL NOT NULL,
-            start_date TEXT NOT NULL,
-            target_weight REAL NOT NULL,
-            target_date TEXT NOT NULL,
-            goal_notes TEXT NOT NULL DEFAULT '',
-            updated_at TEXT NOT NULL
-        )
-    """)
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS weight_logs (
-            id SERIAL PRIMARY KEY,
-            username TEXT NOT NULL,
-            team_code TEXT NOT NULL DEFAULT 'DEFAULT_TEAM',
-            log_date TEXT NOT NULL,
-            weight_kg REAL NOT NULL,
-            body_fat_pct REAL,
-            measure_timing TEXT NOT NULL DEFAULT '',
-            notes TEXT NOT NULL DEFAULT '',
-            created_at TEXT NOT NULL
-        )
-    """)
+    try:
+        c = conn.cursor()
+        c.execute("SELECT pg_advisory_xact_lock(20261113);")
 
-    migration_sqls = [
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS team_code TEXT NOT NULL DEFAULT 'DEFAULT_TEAM'",
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT NOT NULL DEFAULT ''",
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TEXT NOT NULL DEFAULT ''",
-        "ALTER TABLE records ADD COLUMN IF NOT EXISTS team_code TEXT NOT NULL DEFAULT 'DEFAULT_TEAM'",
-        "ALTER TABLE training_plans ADD COLUMN IF NOT EXISTS team_code TEXT NOT NULL DEFAULT 'DEFAULT_TEAM'",
-        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS team_code TEXT NOT NULL DEFAULT 'DEFAULT_TEAM'",
-        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS end_date TEXT DEFAULT ''",
-        "ALTER TABLE injury_feedbacks ADD COLUMN IF NOT EXISTS plan_id INTEGER DEFAULT NULL",
-        "ALTER TABLE injury_feedbacks ADD COLUMN IF NOT EXISTS checked_items TEXT DEFAULT '[]'"
-    ]
-    for q in migration_sqls:
-        try:
+        tables = [
+            ("users", """
+                CREATE TABLE IF NOT EXISTS users (
+                    username TEXT PRIMARY KEY,
+                    password_hash TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    team_code TEXT NOT NULL DEFAULT 'DEFAULT_TEAM',
+                    email TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL DEFAULT ''
+                )
+            """),
+            ("reset_tokens", """
+                CREATE TABLE IF NOT EXISTS reset_tokens (
+                    username TEXT PRIMARY KEY,
+                    otp_code TEXT NOT NULL,
+                    expires_at TEXT NOT NULL
+                )
+            """),
+            ("records", """
+                CREATE TABLE IF NOT EXISTS records (
+                    id SERIAL PRIMARY KEY,
+                    username TEXT NOT NULL,
+                    team_code TEXT NOT NULL DEFAULT 'DEFAULT_TEAM',
+                    module TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    details TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    FOREIGN KEY (username) REFERENCES users (username)
+                )
+            """),
+            ("training_plans", """
+                CREATE TABLE IF NOT EXISTS training_plans (
+                    id SERIAL PRIMARY KEY,
+                    username TEXT NOT NULL,
+                    team_code TEXT NOT NULL DEFAULT 'DEFAULT_TEAM',
+                    plan_date TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    intensity TEXT NOT NULL,
+                    notes TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+            """),
+            ("competitions", """
+                CREATE TABLE IF NOT EXISTS competitions (
+                    id SERIAL PRIMARY KEY,
+                    username TEXT NOT NULL,
+                    team_code TEXT NOT NULL DEFAULT 'DEFAULT_TEAM',
+                    comp_name TEXT NOT NULL,
+                    comp_date TEXT NOT NULL,
+                    end_date TEXT DEFAULT '',
+                    location TEXT DEFAULT '',
+                    notes TEXT DEFAULT '',
+                    created_at TEXT NOT NULL
+                )
+            """),
+            ("injury_feedbacks", """
+                CREATE TABLE IF NOT EXISTS injury_feedbacks (
+                    id SERIAL PRIMARY KEY,
+                    athlete_username TEXT NOT NULL,
+                    trainer_username TEXT NOT NULL,
+                    team_code TEXT NOT NULL,
+                    feedback_date TEXT NOT NULL,
+                    body_part TEXT NOT NULL,
+                    status_tag TEXT NOT NULL,
+                    treatment_advice TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+            """),
+            ("injury_feedback_replies", """
+                CREATE TABLE IF NOT EXISTS injury_feedback_replies (
+                    id SERIAL PRIMARY KEY,
+                    feedback_id INTEGER NOT NULL,
+                    sender_username TEXT NOT NULL,
+                    sender_role TEXT NOT NULL,
+                    reply_text TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+            """),
+            ("weight_goals", """
+                CREATE TABLE IF NOT EXISTS weight_goals (
+                    username TEXT PRIMARY KEY,
+                    team_code TEXT NOT NULL DEFAULT 'DEFAULT_TEAM',
+                    start_weight REAL NOT NULL,
+                    start_date TEXT NOT NULL,
+                    target_weight REAL NOT NULL,
+                    target_date TEXT NOT NULL,
+                    goal_notes TEXT NOT NULL DEFAULT '',
+                    updated_at TEXT NOT NULL
+                )
+            """),
+            ("weight_logs", """
+                CREATE TABLE IF NOT EXISTS weight_logs (
+                    id SERIAL PRIMARY KEY,
+                    username TEXT NOT NULL,
+                    team_code TEXT NOT NULL DEFAULT 'DEFAULT_TEAM',
+                    log_date TEXT NOT NULL,
+                    weight_kg REAL NOT NULL,
+                    body_fat_pct REAL,
+                    measure_timing TEXT NOT NULL DEFAULT '',
+                    notes TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL
+                )
+            """)
+        ]
+
+        for t_name, t_sql in tables:
+            _create_table_safe(c, t_name, t_sql)
+
+        migration_sqls = [
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS team_code TEXT NOT NULL DEFAULT 'DEFAULT_TEAM'",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE records ADD COLUMN IF NOT EXISTS team_code TEXT NOT NULL DEFAULT 'DEFAULT_TEAM'",
+            "ALTER TABLE training_plans ADD COLUMN IF NOT EXISTS team_code TEXT NOT NULL DEFAULT 'DEFAULT_TEAM'",
+            "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS team_code TEXT NOT NULL DEFAULT 'DEFAULT_TEAM'",
+            "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS end_date TEXT DEFAULT ''",
+            "ALTER TABLE injury_feedbacks ADD COLUMN IF NOT EXISTS plan_id INTEGER DEFAULT NULL",
+            "ALTER TABLE injury_feedbacks ADD COLUMN IF NOT EXISTS checked_items TEXT DEFAULT '[]'"
+        ]
+        for q in migration_sqls:
             c.execute(q)
-        except Exception:
-            pass
 
-    conn.commit()
-    c.close()
-    conn.close()
+        conn.commit()
+        c.close()
+        return True
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        conn.close()
 
 # -------------------- 【帳號與發訊認證 Logic】 --------------------
 def hash_password(password):
@@ -869,8 +876,9 @@ def save_record(*args, **kwargs):
     c = conn.cursor()
     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+    team_code = kwargs.get("team_code", "DEFAULT_TEAM")
     if len(args) == 5:
-        username, _, module, title, details_dict = args
+        username, team_code, module, title, details_dict = args
     elif len(args) == 4:
         username, module, title, details_dict = args
     else:
@@ -885,8 +893,8 @@ def save_record(*args, **kwargs):
         details_json = str(details_dict)
 
     c.execute(
-        "INSERT INTO records (username, module, title, details, timestamp) VALUES (%s, %s, %s, %s, %s)",
-        (username, module, title, details_json, now_str)
+        "INSERT INTO records (username, team_code, module, title, details, timestamp) VALUES (%s, %s, %s, %s, %s, %s)",
+        (username, team_code, module, title, details_json, now_str)
     )
     conn.commit()
     c.close()
@@ -895,30 +903,32 @@ def save_record(*args, **kwargs):
 def get_user_records(*args, **kwargs):
     conn = get_db_connection()
     c = conn.cursor()
-    
+
+    team_code = kwargs.get("team_code", args[0] if len(args) > 0 else None)
     username = kwargs.get("username", None)
     module = kwargs.get("module", kwargs.get("category", None))
-    
-    if username is None and len(args) > 0:
-        username = args[0]
-    if module is None and len(args) > 1:
-        module = args[1]
-        
+
+    if module is None and len(args) > 2:
+        module = args[2]
+
     query = "SELECT id, username, module, title, details, timestamp FROM records"
     params = []
     where_clauses = []
-    
+
+    if team_code and str(team_code).strip() and str(team_code) != "None":
+        where_clauses.append("(team_code = %s OR username IN (SELECT username FROM users WHERE team_code = %s))")
+        params.extend([str(team_code), str(team_code)])
     if username and str(username).strip() and str(username) != "None":
         where_clauses.append("username = %s")
         params.append(str(username))
     if module and str(module).strip() and str(module) != "None":
         where_clauses.append("module = %s")
         params.append(str(module))
-        
+
     if where_clauses:
         query += " WHERE " + " AND ".join(where_clauses)
     query += " ORDER BY id DESC"
-    
+
     c.execute(query, tuple(params))
     rows = c.fetchall()
     c.close()
@@ -2301,11 +2311,16 @@ elif page == "角度分析 Angle Analysis":
 
                 if st.session_state["user_info"]:
                     with st.form("save_angle_form"):
-                        rec_title_angle = st.text_input("紀錄名稱與備註", value=f"動作關鍵影格角度量測 {uploaded_file.name}")
+                        rec_title_angle = st.text_input("紀錄名稱", value=f"動作關鍵影格角度量測 {uploaded_file.name}")
+                        rec_note_angle = st.text_area("動作分析筆記 (選填)", placeholder="可記錄起跳角度觀察、身體重心調整重點...", height=80)
                         if st.form_submit_button("儲存至團隊資料庫"):
                             u = st.session_state["user_info"]
                             save_record(u["username"], u["team_code"], "關鍵影格角度量測 Keyframe Angle Measurement", rec_title_angle, {
-                                "video_filename": uploaded_file.name, "image_b64": captured_img, "angle_metrics": json.loads(captured_json), "saved_at": str(datetime.datetime.now())
+                                "video_filename": uploaded_file.name,
+                                "image_b64": captured_img,
+                                "angle_metrics": json.loads(captured_json),
+                                "user_notes": rec_note_angle.strip(),
+                                "saved_at": str(datetime.datetime.now())
                             })
                             st.success("儲存成功！")
 
@@ -2478,9 +2493,14 @@ elif page == "角度分析 Angle Analysis":
                     if st.session_state["user_info"]:
                         with st.form("save_timer_form"):
                             rec_title_timer = st.text_input("紀錄名稱", value=f"欄間秒數及速度計算 {uploaded_file.name}")
+                            rec_note_timer = st.text_area("欄間節奏分析筆記 (選填)", placeholder="可記錄各欄間步頻變化、後段速度維持情況...", height=80)
                             if st.form_submit_button("儲存至團隊資料庫"):
                                 u = st.session_state["user_info"]
-                                save_record(u["username"], u["team_code"], "欄間秒數及速度計算 Hurdle Time & Speed Calculation", rec_title_timer, {"timer_metrics": tm_data, "saved_at": str(datetime.datetime.now())})
+                                save_record(u["username"], u["team_code"], "欄間秒數及速度計算 Hurdle Time & Speed Calculation", rec_title_timer, {
+                                    "timer_metrics": tm_data,
+                                    "user_notes": rec_note_timer.strip(),
+                                    "saved_at": str(datetime.datetime.now())
+                                })
                                 st.success("儲存成功！")
                 except Exception: pass
 
@@ -2968,6 +2988,7 @@ elif page == "雙影同步 Dual Video Sync":
             if st.session_state["user_info"]:
                 with st.form("save_dual_angle_form"):
                     rec_title_dual = st.text_input("紀錄名稱", value=f"雙影角度對比 {file_a.name} vs {file_b.name}")
+                    rec_note_dual = st.text_area("雙影對比筆記 (選填)", placeholder="可記錄左右動作差異、改善重點...", height=80)
                     if st.form_submit_button("💾 儲存至團隊數據庫", use_container_width=True):
                         u = st.session_state["user_info"]
                         try:
@@ -2977,11 +2998,13 @@ elif page == "雙影同步 Dual Video Sync":
 
                         save_record(
                             u["username"],
+                            u["team_code"],
                             "雙影同步 Dual Video Sync",
                             rec_title_dual,
                             {
                                 "image_b64": captured_dual_img, 
-                                "angle_metrics": parsed_metrics, 
+                                "angle_metrics": parsed_metrics,
+                                "user_notes": rec_note_dual.strip(),
                                 "saved_at": str(datetime.datetime.now())
                             }
                         )
@@ -3945,14 +3968,14 @@ elif page == "課表紀錄 Training Plan":
                     </script>
                 </body>
                 </html>"""
-                components.html(body_map_html, height=490, scrolling=False)
+                components.html(body_map_html, height=495, scrolling=False)
 
             with tab_view_plan:
                 render_training_log_history()
 
 # ==================== 【頁面 8：體重監控 Weight Monitoring】 ====================
 elif page == "體重監控 Weight Monitoring":
-    st.title("⚖️ 運動醫學體重監控與目標追蹤 Weight Monitoring")
+    st.title("⚖️ 競技體重監控與運動醫學軌跡評估 Weight Monitoring")
     st.markdown("---")
 
     if st.session_state["user_info"] is None:
@@ -3966,297 +3989,265 @@ elif page == "體重監控 Weight Monitoring":
         if is_staff:
             team_athletes = get_team_athletes(team_code)
             if not team_athletes:
-                st.info("目前團隊尚無選手帳號。")
+                st.warning("團隊目前尚無選手帳號")
                 target_athlete = None
             else:
-                target_athlete = st.selectbox("選擇要檢視／管理體重監控的選手：", team_athletes, key="wm_staff_sel_ath")
+                target_athlete = st.selectbox("請選擇檢視或協助設定的選手 Select Athlete：", team_athletes, key="wm_sel_athlete")
         else:
             target_athlete = u["username"]
 
         if target_athlete:
-            existing_goal = get_weight_goal(target_athlete)
-            athlete_logs = get_weight_logs(username=target_athlete)
+            goal_row = get_weight_goal(target_athlete)
+            logs_rows = get_weight_logs(username=target_athlete, team_code=team_code)
+            progress_eval = evaluate_measurement_progress(goal_row, logs_rows)
 
-            # 推算預設起始體重（若有最新測量則帶入最新體重，否則為 62.0 kg）
-            default_start_w = float(athlete_logs[-1][3]) if athlete_logs else 62.0
-            if existing_goal:
-                init_start_w = float(existing_goal[2])
-                try:
-                    init_start_dt = datetime.datetime.strptime(str(existing_goal[3]), "%Y-%m-%d").date()
-                except Exception:
-                    init_start_dt = datetime.date.today()
-                init_target_w = float(existing_goal[4])
-                try:
-                    init_target_dt = datetime.datetime.strptime(str(existing_goal[5]), "%Y-%m-%d").date()
-                except Exception:
-                    init_target_dt = datetime.date.today() + datetime.timedelta(days=42)
-                init_goal_notes = existing_goal[6] or ""
-            else:
-                init_start_w = default_start_w
-                init_start_dt = datetime.date.today()
-                init_target_w = round(default_start_w - 2.0, 1)
-                init_target_dt = datetime.date.today() + datetime.timedelta(days=42)
-                init_goal_notes = ""
+            if goal_row and progress_eval:
+                _, _, g_start_w, g_start_d, g_target_w, g_target_d, g_notes, g_updated = goal_row
 
-            tab_wm_overview, tab_wm_goal, tab_wm_lit = st.tabs([
-                "📊 體重測量與目標進度診斷",
-                "🎯 設定目前體重與目標達成日期",
-                "📚 運動醫學文獻依據與判讀標準"
+                st.subheader(f"📊 {target_athlete} 體重進度總覽與運動醫學即時判讀")
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric(
+                    "最新測量體重",
+                    f"{progress_eval['latest_w']:.1f} kg",
+                    f"{progress_eval['daily_diff']:+.1f} kg (較前次)"
+                )
+                m2.metric(
+                    "7 日移動平均線",
+                    f"{progress_eval['ma7_w']:.1f} kg",
+                    f"今日理論軌跡 {progress_eval['expected_today_w']:.1f} kg"
+                )
+                m3.metric(
+                    "目標體重 / 剩餘差距",
+                    f"{g_target_w:.1f} kg",
+                    f"尚差 {abs(progress_eval['remaining_w']):.1f} kg" if abs(progress_eval['remaining_w']) > 0.25 else "已達標"
+                )
+                m4.metric(
+                    "目標達成進度",
+                    f"{progress_eval['progress_pct']:.1f}%",
+                    f"剩餘 {max(progress_eval['days_left'], 0)} 天 (目標日 {g_target_d})"
+                )
+
+                st.progress(min(max(progress_eval["progress_pct"] / 100.0, 0.0), 1.0))
+
+                lvl = progress_eval["status_level"]
+                box_msg = f"**{progress_eval['status_title']}**\n\n{progress_eval['feedback_msg']}"
+                if lvl == "success":
+                    st.success(box_msg)
+                elif lvl == "warning":
+                    st.warning(box_msg)
+                elif lvl == "error":
+                    st.error(box_msg)
+                else:
+                    st.info(box_msg)
+
+                if progress_eval["water_note"]:
+                    st.info(progress_eval["water_note"])
+
+                st.markdown("---")
+            elif goal_row and not logs_rows:
+                _, _, g_start_w, g_start_d, g_target_w, g_target_d, g_notes, _ = goal_row
+                st.info(
+                    f"🎯 目前已設定體重目標：**{g_start_w:.1f} kg → {g_target_w:.1f} kg**（目標日期：**{g_target_d}**）。"
+                    f"請於下方「📝 每日體重測量紀錄」輸入第一筆測量數值，系統將立即啟動軌跡比對與運動醫學分析。"
+                )
+            elif not goal_row:
+                st.info("💡 尚未設定目標體重與目標達成日期。請先於下方「🎯 設定目標體重與計畫合理性評估」建立個人目標，系統將依據運動醫學共識自動規劃安全進度軌跡。")
+
+            tab_wm_log, tab_wm_goal, tab_wm_chart, tab_wm_lit = st.tabs([
+                "📝 每日體重測量紀錄",
+                "🎯 設定目標體重與計畫評估",
+                "📈 體重軌跡與 7 日均線圖表",
+                "📚 運動醫學文獻依據"
             ])
 
-            # ---------------- 分頁 1：每次測量與文獻進度診斷 ----------------
-            with tab_wm_overview:
-                # 1) 頂部最新文獻診斷儀表板
-                if existing_goal and athlete_logs:
-                    diag = evaluate_measurement_progress(existing_goal, athlete_logs)
-                    if diag:
-                        st.subheader("🩺 運動醫學文獻趨勢診斷（每次測量即時更新）")
+            with tab_wm_log:
+                st.subheader("新增 / 更新測量紀錄")
+                st.caption("建議於每日「晨起空腹如廁後」穿著固定輕便衣物測量，以排除運動流汗脫水與胃內容物造成的誤差（World Athletics, 2019）。")
 
-                        # 狀態提示橫幅
-                        if diag["status_level"] == "success":
-                            st.success(f"**{diag['status_title']}**\n\n{diag['feedback_msg']}")
-                        elif diag["status_level"] == "warning":
-                            st.warning(f"**{diag['status_title']}**\n\n{diag['feedback_msg']}")
-                        elif diag["status_level"] == "error":
-                            st.error(f"**{diag['status_title']}**\n\n{diag['feedback_msg']}")
-                        else:
-                            st.info(f"**{diag['status_title']}**\n\n{diag['feedback_msg']}")
+                default_w_val = float(logs_rows[-1][3]) if logs_rows else (float(goal_row[2]) if goal_row else 60.0)
+                with st.form("form_weight_log"):
+                    c_l1, c_l2, c_l3 = st.columns(3)
+                    with c_l1:
+                        log_date_in = st.date_input("測量日期 Measurement Date", value=datetime.date.today())
+                    with c_l2:
+                        weight_kg_in = st.number_input("測量體重 (kg)", min_value=30.0, max_value=150.0, value=default_w_val, step=0.1, format="%.1f")
+                    with c_l3:
+                        use_bf = st.checkbox("同時紀錄體脂率 (%)", value=False)
+                        bf_pct_in = st.number_input("體脂率 Body Fat (%)", min_value=3.0, max_value=50.0, value=12.0, step=0.1, format="%.1f", disabled=not use_bf)
 
-                        if diag["water_note"]:
-                            st.info(diag["water_note"])
+                    timing_in = st.selectbox("測量時機 Measurement Timing", MEASURE_TIMING_OPTIONS)
+                    notes_in = st.text_input("生理與飲食備註（例：昨日高碳水補肝醣、高強度欄架課後流汗較多、生理期水腫等）")
 
-                        # 進度條與關鍵指標
-                        st.progress(int(diag["progress_pct"]), text=f"目標達成進度：{diag['progress_pct']:.1f}%（起始 {float(existing_goal[2]):.1f} kg → 目標 {float(existing_goal[4]):.1f} kg，目標日 {existing_goal[5]}）")
-
-                        m1, m2, m3, m4 = st.columns(4)
-                        m1.metric(
-                            "最新測量體重",
-                            f"{diag['latest_w']:.1f} kg",
-                            delta=f"{diag['daily_diff']:+.1f} kg (較前次)",
-                            delta_color="off"
-                        )
-                        m2.metric(
-                            "7日移動平均 (過濾水分波動)",
-                            f"{diag['ma7_w']:.1f} kg",
-                            delta=f"今日理論軌跡 {diag['expected_today_w']:.1f} kg",
-                            delta_color="off"
-                        )
-                        m3.metric(
-                            "距離目標體重差距",
-                            f"{abs(diag['remaining_w']):.1f} kg",
-                            delta=f"剩餘 {max(diag['days_left'], 0)} 天",
-                            delta_color="off"
-                        )
-                        m4.metric(
-                            "實際平均每週變化率",
-                            f"{diag['actual_weekly_pct']:+.2f}% / 週",
-                            delta=f"{diag['actual_weekly_kg']:+.2f} kg / 週",
-                            delta_color="off"
-                        )
-                elif existing_goal and not athlete_logs:
-                    st.info(f"🎯 已設定目標：**{float(existing_goal[2]):.1f} kg → {float(existing_goal[4]):.1f} kg**（目標日：`{existing_goal[5]}`）。請在下方輸入第一筆體重測量紀錄，系統將立即依運動醫學文獻分析您的前進軌跡！")
-                else:
-                    st.warning("🎯 尚未設定「目前體重、目標體重與目標達成日期」，請先至上方 **「🎯 設定目前體重與目標達成日期」** 分頁完成設定，即可啟動每次測量的文獻進度診斷！")
-
-                st.markdown("---")
-
-                # 2) 新增每次體重測量表單
-                st.subheader("➕ 登錄本次體重測量 Log Measurement")
-                with st.form("form_add_weight_log"):
-                    wc1, wc2, wc3, wc4 = st.columns([1.1, 1.0, 1.0, 1.4])
-                    with wc1:
-                        w_log_date = st.date_input("測量日期 Date", value=datetime.date.today())
-                    with wc2:
-                        default_input_w = float(athlete_logs[-1][3]) if athlete_logs else (float(existing_goal[2]) if existing_goal else 62.0)
-                        w_val = st.number_input("本次體重 (kg)", min_value=25.0, max_value=200.0, value=default_input_w, step=0.1, format="%.1f")
-                    with wc3:
-                        bf_val = st.number_input("體脂率 % (選填，0=略過)", min_value=0.0, max_value=60.0, value=0.0, step=0.1, format="%.1f")
-                    with wc4:
-                        w_timing = st.selectbox("測量時機 Timing", MEASURE_TIMING_OPTIONS)
-
-                    w_notes = st.text_input("身體狀態備註 (例：晨起空腹、昨日高強度欄間訓練後、生理期水腫等)", placeholder="選填備註...")
-
-                    if st.form_submit_button("💾 儲存測量並立即進行文獻進度診斷", use_container_width=True):
-                        bf_save = round(float(bf_val), 1) if bf_val > 0 else None
-                        upsert_weight_log(
-                            username=target_athlete,
-                            team_code=team_code,
-                            log_date=w_log_date,
-                            weight_kg=round(float(w_val), 1),
-                            body_fat_pct=bf_save,
-                            measure_timing=w_timing,
-                            notes=w_notes.strip()
-                        )
-                        st.success(f"已記錄 {w_log_date} 體重 {w_val:.1f} kg，上方已更新運動醫學進度診斷！")
+                    if st.form_submit_button("💾 儲存測量並進行運動醫學判讀", use_container_width=True):
+                        bf_save = float(bf_pct_in) if use_bf else None
+                        upsert_weight_log(target_athlete, team_code, log_date_in, weight_kg_in, bf_save, timing_in, notes_in.strip())
+                        st.success(f"已儲存 {log_date_in} 體重紀錄（{weight_kg_in:.1f} kg），運動醫學軌跡分析已同步更新！")
                         st.rerun()
 
-                st.markdown("---")
+                if logs_rows:
+                    st.markdown("---")
+                    st.markdown("##### 📋 歷史體重測量明細")
+                    sorted_desc = sorted(logs_rows, key=lambda x: (x[2], x[0]), reverse=True)
+                    table_rows = []
+                    for r in sorted_desc:
+                        _, _, l_dt, l_w, l_bf, l_tim, l_note, _ = r
+                        table_rows.append({
+                            "測量日期": l_dt,
+                            "體重 (kg)": f"{float(l_w):.1f}",
+                            "體脂率 (%)": f"{float(l_bf):.1f}%" if l_bf is not None else "-",
+                            "測量時機": l_tim,
+                            "備註": l_note if l_note else "-"
+                        })
+                    st.dataframe(pd.DataFrame(table_rows), use_container_width=True, hide_index=True)
 
-                # 3) 體重變化趨勢 vs 理想目標軌跡圖表
-                st.subheader("📈 體重變化趨勢與理想目標軌跡對照圖")
-                if athlete_logs:
-                    df_w = pd.DataFrame(athlete_logs, columns=[
-                        "id", "username", "log_date", "weight_kg", "body_fat_pct", "measure_timing", "notes", "created_at"
-                    ])
-                    df_w["weight_kg"] = df_w["weight_kg"].astype(float)
-                    df_w["ma7_kg"] = df_w["weight_kg"].rolling(window=7, min_periods=1).mean().round(2)
-
-                    chart_rows = []
-                    for _, r in df_w.iterrows():
-                        chart_rows.append({"日期": r["log_date"], "數值 (kg)": r["weight_kg"], "曲線類型": "實際測量體重 (kg)"})
-                        chart_rows.append({"日期": r["log_date"], "數值 (kg)": r["ma7_kg"], "曲線類型": "7日移動平均 (過濾水分波動)"})
-
-                    # 若有設定目標，加入起點到目標日的理論理想軌跡線
-                    if existing_goal:
-                        g_start_w = float(existing_goal[2])
-                        g_start_d = str(existing_goal[3])
-                        g_target_w = float(existing_goal[4])
-                        g_target_d = str(existing_goal[5])
-                        chart_rows.append({"日期": g_start_d, "數值 (kg)": g_start_w, "曲線類型": "文獻理想目標軌跡"})
-                        chart_rows.append({"日期": g_target_d, "數值 (kg)": g_target_w, "曲線類型": "文獻理想目標軌跡"})
-
-                    df_chart = pd.DataFrame(chart_rows)
-                    all_weights = df_chart["數值 (kg)"].tolist()
-                    y_min = max(20.0, min(all_weights) - 2.0)
-                    y_max = max(all_weights) + 2.0
-
-                    color_scale = alt.Scale(
-                        domain=["實際測量體重 (kg)", "7日移動平均 (過濾水分波動)", "文獻理想目標軌跡"],
-                        range=["#2563eb", "#059669", "#d97706"]
-                    )
-
-                    base_line = alt.Chart(df_chart).mark_line(point=True, strokeWidth=2.5).encode(
-                        x=alt.X("日期:T", title="日期 Date"),
-                        y=alt.Y("數值 (kg):Q", title="體重 (kg)", scale=alt.Scale(domain=[y_min, y_max])),
-                        color=alt.Color("曲線類型:N", scale=color_scale, title="指標曲線"),
-                        strokeDash=alt.condition(
-                            alt.datum["曲線類型"] == "文獻理想目標軌跡",
-                            alt.value([6, 4]),
-                            alt.value([0])
-                        ),
-                        tooltip=[
-                            alt.Tooltip("日期:T", title="日期", format="%Y-%m-%d"),
-                            alt.Tooltip("曲線類型:N", title="類型"),
-                            alt.Tooltip("數值 (kg):Q", title="體重 (kg)", format=".2f")
-                        ]
-                    ).properties(height=380)
-
-                    layers = [base_line]
-                    if existing_goal:
-                        target_rule_df = pd.DataFrame([{"target_y": float(existing_goal[4]), "label": f"目標體重 {float(existing_goal[4]):.1f} kg"}])
-                        rule = alt.Chart(target_rule_df).mark_rule(color="#dc2626", strokeDash=[3, 3], strokeWidth=2).encode(
-                            y="target_y:Q"
-                        )
-                        layers.append(rule)
-
-                    st.altair_chart(alt.layer(*layers), use_container_width=True)
-
-                    # 4) 歷次測量明細列表
-                    st.markdown("##### 📋 歷次體重測量明細")
-                    for idx_r in range(len(df_w) - 1, -1, -1):
-                        row = df_w.iloc[idx_r]
-                        prev_row_w = df_w.iloc[idx_r - 1]["weight_kg"] if idx_r > 0 else row["weight_kg"]
-                        diff_prev = row["weight_kg"] - prev_row_w
-                        diff_str = f"{diff_prev:+.1f} kg" if idx_r > 0 else "基準紀錄"
-                        bf_disp = f" ｜ 體脂：{row['body_fat_pct']:.1f}%" if pd.notna(row["body_fat_pct"]) and row["body_fat_pct"] else ""
-                        goal_gap_disp = ""
-                        if existing_goal:
-                            gap_val = float(existing_goal[4]) - row["weight_kg"]
-                            goal_gap_disp = f" ｜ 距目標：{gap_val:+.1f} kg"
-
-                        with st.expander(f"📅 {row['log_date']} ｜ 體重：**{row['weight_kg']:.1f} kg** ({diff_str}) ｜ 7日均線：{row['ma7_kg']:.1f} kg{bf_disp}{goal_gap_disp}"):
-                            st.write(f"• **測量時機**：{row['measure_timing'] or '未標註'}")
-                            if row["notes"]:
-                                st.write(f"• **身體狀態備註**：{row['notes']}")
-                            if st.button("🗑️ 刪除此筆測量", key=f"del_wlog_{int(row['id'])}"):
-                                delete_weight_log(int(row["id"]))
-                                st.rerun()
-                else:
-                    st.info("尚無體重測量紀錄，請使用上方表單新增第一筆體重數據。")
-
-            # ---------------- 分頁 2：設定目前體重、目標體重與達成日期 ----------------
-            with tab_wm_goal:
-                st.subheader(f"🎯 體重目標與達成時程設定（選手：{target_athlete}）")
-                st.caption("輸入「目前起始體重」、「目標體重」與「預計達成日期」，系統將依據 IOC、ISSN 與 World Athletics 文獻自動檢核每週變化率是否安全。")
-
-                with st.form("form_weight_goal"):
-                    gc1, gc2 = st.columns(2)
-                    with gc1:
-                        g_start_w = st.number_input("目前 / 起始體重 Current / Start Weight (kg)", min_value=25.0, max_value=200.0, value=init_start_w, step=0.1, format="%.1f")
-                        g_start_date = st.date_input("計畫起始日期 Start Date", value=init_start_dt)
-                    with gc2:
-                        g_target_w = st.number_input("目標體重 Target Weight (kg)", min_value=25.0, max_value=200.0, value=init_target_w, step=0.1, format="%.1f")
-                        g_target_date = st.date_input("目標達成日期 Target Date", value=init_target_dt)
-
-                    g_notes = st.text_input("目標目的與賽事備註 (例：備戰全大運 110mH 最佳功率體重比)", value=init_goal_notes)
-
-                    if st.form_submit_button("💾 儲存目標並檢視運動醫學可行性評估", use_container_width=True):
-                        if g_target_date <= g_start_date:
-                            st.error("目標達成日期必須晚於計畫起始日期！")
-                        else:
-                            upsert_weight_goal(
-                                username=target_athlete,
-                                team_code=team_code,
-                                start_weight=round(float(g_start_w), 1),
-                                start_date=g_start_date,
-                                target_weight=round(float(g_target_w), 1),
-                                target_date=g_target_date,
-                                goal_notes=g_notes.strip()
-                            )
-                            st.success("體重目標與達成時程已儲存！")
+                    with st.expander("🗑️ 刪除單筆體重紀錄"):
+                        del_map = {f"{r[2]} ｜ {float(r[3]):.1f} kg ({r[5]})": r[0] for r in sorted_desc}
+                        sel_del_lbl = st.selectbox("選擇要刪除的紀錄：", list(del_map.keys()), key="wm_del_sel")
+                        if st.button("確認刪除此筆測量紀錄", key="btn_del_wlog"):
+                            delete_weight_log(del_map[sel_del_lbl])
+                            st.success("已刪除該筆體重紀錄")
                             st.rerun()
 
-                # 顯示目前目標的運動醫學可行性評估結果
-                latest_goal = get_weight_goal(target_athlete)
-                if latest_goal:
-                    eval_res = evaluate_weight_goal_plan(latest_goal[2], latest_goal[4], latest_goal[3], latest_goal[5])
-                    st.markdown("---")
-                    st.markdown("##### 🔬 運動醫學文獻可行性評估報告")
-                    em1, em2, em3, em4 = st.columns(4)
-                    em1.metric("總目標變動量", f"{eval_res['delta_w']:+.1f} kg")
-                    em2.metric("計畫總週數", f"{eval_res['total_weeks']} 週 ({eval_res['total_days']} 天)")
-                    em3.metric("平均每週變動 (kg)", f"{eval_res['weekly_kg']:+.2f} kg/週")
-                    em4.metric("平均每週變動 (% BW)", f"{eval_res['weekly_pct']:+.2f}% / 週")
+            with tab_wm_goal:
+                st.subheader("設定競技體重目標與達成期限")
 
-                    if eval_res["level"] == "success":
-                        st.success(f"**{eval_res['badge']}**\n\n{eval_res['summary']}")
-                    elif eval_res["level"] == "warning":
-                        st.warning(f"**{eval_res['badge']}**\n\n{eval_res['summary']}")
-                    elif eval_res["level"] == "error":
-                        st.error(f"**{eval_res['badge']}**\n\n{eval_res['summary']}")
+                init_start_w = float(goal_row[2]) if goal_row else (float(logs_rows[-1][3]) if logs_rows else 60.0)
+                init_target_w = float(goal_row[4]) if goal_row else init_start_w
+                try:
+                    init_start_d = datetime.datetime.strptime(str(goal_row[3]), "%Y-%m-%d").date() if goal_row else datetime.date.today()
+                except Exception:
+                    init_start_d = datetime.date.today()
+                try:
+                    init_target_d = datetime.datetime.strptime(str(goal_row[5]), "%Y-%m-%d").date() if goal_row else (datetime.date.today() + datetime.timedelta(days=42))
+                except Exception:
+                    init_target_d = datetime.date.today() + datetime.timedelta(days=42)
+                init_g_notes = goal_row[6] if goal_row else ""
+
+                cg1, cg2 = st.columns(2)
+                with cg1:
+                    in_start_w = st.number_input("起始基準體重 Start Weight (kg)", min_value=30.0, max_value=150.0, value=init_start_w, step=0.1, format="%.1f", key="wm_g_sw")
+                    in_start_d = st.date_input("計畫起始日期 Start Date", value=init_start_d, key="wm_g_sd")
+                with cg2:
+                    in_target_w = st.number_input("目標體重 Target Weight (kg)", min_value=30.0, max_value=150.0, value=init_target_w, step=0.1, format="%.1f", key="wm_g_tw")
+                    in_target_d = st.date_input("目標達成日期 Target Date", value=init_target_d, key="wm_g_td")
+
+                in_g_notes = st.text_input("階段目標說明（例：全大運賽前最佳競技體重、冬訓增肌期目標等）", value=init_g_notes, key="wm_g_notes")
+
+                if in_target_d <= in_start_d:
+                    st.error("⚠️ 目標達成日期必須晚於計畫起始日期。")
+                else:
+                    plan_eval = evaluate_weight_goal_plan(in_start_w, in_target_w, in_start_d, in_target_d)
+                    st.markdown("##### 🩺 運動醫學計畫合理性即時預審")
+                    eval_text = f"**{plan_eval['badge']}**（共 {plan_eval['total_weeks']} 週，總變化 {plan_eval['delta_w']:+.1f} kg）\n\n{plan_eval['summary']}"
+                    if plan_eval["level"] == "success":
+                        st.success(eval_text)
+                    elif plan_eval["level"] == "warning":
+                        st.warning(eval_text)
+                    elif plan_eval["level"] == "error":
+                        st.error(eval_text)
                     else:
-                        st.info(f"**{eval_res['badge']}**\n\n{eval_res['summary']}")
+                        st.info(eval_text)
 
-            # ---------------- 分頁 3：運動醫學文獻依據總覽 ----------------
+                    if st.button("🎯 儲存 / 更新體重目標計畫 Save Weight Goal", use_container_width=True, key="btn_save_wgoal"):
+                        upsert_weight_goal(target_athlete, team_code, in_start_w, in_start_d, in_target_w, in_target_d, in_g_notes.strip())
+                        st.success("體重目標計畫已成功儲存！")
+                        st.rerun()
+
+            with tab_wm_chart:
+                st.subheader("體重變化趨勢、7 日移動平均線與目標理想軌跡")
+                if not logs_rows and not goal_row:
+                    st.info("尚無數據可繪製圖表，請先新增體重紀錄或設定目標。")
+                else:
+                    sorted_logs = sorted(logs_rows, key=lambda x: (x[2], x[0]))
+                    chart_records = []
+
+                    if sorted_logs:
+                        weights_seq = [float(r[3]) for r in sorted_logs]
+                        for idx, r in enumerate(sorted_logs):
+                            w_val = float(r[3])
+                            win_start = max(0, idx - 6)
+                            ma7_val = sum(weights_seq[win_start:idx+1]) / (idx - win_start + 1)
+                            chart_records.append({
+                                "Date": str(r[2]),
+                                "Series": "每日測量體重 (kg)",
+                                "Weight": round(w_val, 2)
+                            })
+                            chart_records.append({
+                                "Date": str(r[2]),
+                                "Series": "7 日移動平均線 (排除水分波動)",
+                                "Weight": round(ma7_val, 2)
+                            })
+
+                    if goal_row:
+                        _, _, g_sw, g_sd, g_tw, g_td, _, _ = goal_row
+                        chart_records.append({
+                            "Date": str(g_sd),
+                            "Series": "運動醫學目標理想軌跡",
+                            "Weight": round(float(g_sw), 2)
+                        })
+                        chart_records.append({
+                            "Date": str(g_td),
+                            "Series": "運動醫學目標理想軌跡",
+                            "Weight": round(float(g_tw), 2)
+                        })
+
+                    df_w_chart = pd.DataFrame(chart_records)
+                    w_min = df_w_chart["Weight"].min() - 1.5
+                    w_max = df_w_chart["Weight"].max() + 1.5
+
+                    line_chart = alt.Chart(df_w_chart).mark_line(point=True).encode(
+                        x=alt.X("Date:T", title="日期 Date"),
+                        y=alt.Y("Weight:Q", title="體重 (kg)", scale=alt.Scale(domain=[w_min, w_max])),
+                        color=alt.Color(
+                            "Series:N",
+                            title="數據曲線",
+                            scale=alt.Scale(
+                                domain=["每日測量體重 (kg)", "7 日移動平均線 (排除水分波動)", "運動醫學目標理想軌跡"],
+                                range=["#94a3b8", "#2563eb", "#059669"]
+                            )
+                        ),
+                        strokeDash=alt.StrokeDash(
+                            "Series:N",
+                            scale=alt.Scale(
+                                domain=["每日測量體重 (kg)", "7 日移動平均線 (排除水分波動)", "運動醫學目標理想軌跡"],
+                                range=[[1, 0], [1, 0], [6, 4]]
+                            ),
+                            legend=None
+                        ),
+                        tooltip=[
+                            alt.Tooltip("Date:T", title="日期", format="%Y-%m-%d"),
+                            alt.Tooltip("Series:N", title="曲線"),
+                            alt.Tooltip("Weight:Q", title="體重 (kg)")
+                        ]
+                    ).properties(height=420)
+
+                    st.altair_chart(line_chart, use_container_width=True)
+                    st.caption("判讀說明：灰色實線為每日單次測量值（易受肝醣與汗水影響）；藍色實線為 7 日移動平均線，應沿綠色虛線（目標理想軌跡）穩健推進。")
+
             with tab_wm_lit:
-                st.subheader("📚 系統判讀所引用之運動醫學與運動營養學文獻")
+                st.subheader("📚 本模組採用之運動醫學與運動營養文獻依據")
                 st.markdown("""
-                本模組之體重趨勢診斷演算法，係綜合下列國際運動醫學與田徑營養共識文獻之實證數據設計：
+                本系統之體重目標速率評估、安全警戒門檻與 7 日移動平均判讀邏輯，均依據國際運動醫學與田徑營養共識建立：
 
                 1. **Garthe, I., Raastad, T., Refsnes, P. E., Koivisto, A., & Sundgot-Borgen, J. (2011).**  
                    *Effect of two different weight-loss rates on body composition and strength and power-related performance in elite athletes.*  
                    **International Journal of Sport Nutrition and Exercise Metabolism**, 21(2), 97–104.  
-                   * **核心實證**：菁英運動員採用 **慢速減重（約 0.7% 體重/週）** 可在減脂同時保留瘦體組織並提升下肢肌力與爆發力；若採用 **快速減重（約 1.4% 體重/週）** 則會造成明顯肌肉流失與爆發力下降。
+                   - **核心實證**：菁英運動員採用**每週 0.5%–0.7% 體重**的漸進減重速率，不僅能維持瘦體組織（肌肉量），甚至能提升下肢最大肌力與垂直跳躍爆發力；反之，每週減重達 **1.0%–1.4% 體重**的快速減重組，會導致瘦體組織顯著流失且爆發力成長受阻。
 
-                2. **Mountjoy, M., Ackerman, K. E., Bailey, D. M., et al. (2023).**  
+                2. **Mountjoy, M., Ackerman, K. E., Bailey, D. M., Burke, L. M., Constantini, N., Hackney, A. C., ... & Budgett, R. (2023).**  
                    *2023 International Olympic Committee's (IOC) consensus statement on Relative Energy Deficiency in Sport (REDs).*  
                    **British Journal of Sports Medicine**, 57(17), 1073–1097.  
-                   * **核心實證**：過快減重（> 1.0% 體重/週）或長期能量可用性不足（LEA）會誘發 **REDs（運動員相對能量不足）**，導致骨密度下降、內分泌與生理期異常、神經肌肉反應變慢及疲勞性傷害風險升高。
+                   - **核心實證**：長期或過度的能量赤字（Low Energy Availability, LEA）會引發運動員相對能量不足（REDs），導致荷爾蒙失調、骨密度下降（疲勞性骨折風險上升）、免疫力受損與無氧速度耐力衰退。
 
-                3. **Aragon, A. A., Schoenfeld, B. J., Wildman, R., et al. (2017).**  
-                   *International Society of Sports Nutrition (ISSN) position stand: diets and body composition.*  
-                   **Journal of the International Society of Sports Nutrition**, 14, 16.  
-                   * **核心實證**：受訓運動員進行增肌減脂時，建議增重速率控制在 **0.25%～0.5% 體重/週**，以避免過多熱量轉化為非功能性脂肪而降低功率體重比。
-
-                4. **Slater, G. J., Dieter, B. P., Marsh, D. J., Helms, E. R., Shaw, G., & Iraki, J. (2019).**  
-                   *Is an Energy Surplus Required to Maximize Skeletal Muscle Hypertrophy Associated With Resistance Training?*  
-                   **Frontiers in Nutrition**, 6, 131.  
-                   * **核心實證**：受訓運動員需配合阻力訓練與漸進式能量盈餘（約 0.25%–0.5% 體重/週），才能在最大化骨骼肌肥大的同時維持田徑專項速度。
-
-                5. **Burke, L. M., Close, G. L., Lundy, B., Mooses, M., Morton, J. P., & Tenforde, A. S. (2018) / World Athletics Consensus Statement (2019).**  
-                   *International Association of Athletics Federations Consensus Statement 2019: Nutrition for Athletics.*  
+                3. **Burke, L. M., Castell, L. M., Casa, D. J., Close, G. L., Costa, R. J., Desbrow, B., ... & Stellingwerff, T. (2019).**  
+                   *International Association of Athletics Federations (World Athletics) Consensus Statement 2019: Nutrition for Athletics.*  
                    **International Journal of Sport Nutrition and Exercise Metabolism**, 29(2), 73–84.  
-                   * **核心實證**：田徑短跑與跨欄選手單日體重受肝醣儲備（1g 肝醣結合約 3g 水分）與流汗脫水影響，會有 **±0.5%～1.5%** 的正常生理波動；因此判讀進度應以 **晨起空腹測量** 搭配 **7 日移動平均線** 為準，避免賽前極端減重影響無氧糖解能力。
+                   - **核心實證**：短跑與跨欄項目高度依賴功率體重比（Power-to-Weight Ratio）與磷酸肌酸／糖酵解系統；賽季中應避免大幅度快速減重，並透過標準化測量時機（晨起空腹如廁後）與多日移動平均來區分真實組織變化與肝醣／水分波動（1g 肝醣約結合 3g 水分）。
+
+                4. **Aragon, A. A., Schoenfeld, B. J., Wildman, R., Kleiner, S., VanDusseldorp, T., Taylor, L., ... & Antonio, J. (2017).**  
+                   *International Society of Sports Nutrition (ISSN) position stand: diets and body composition.*  
+                   **Journal of the International Society of Sports Nutrition**, 14(1), 16.  
+                   - **核心實證**：受訓運動員在增肌期建議將每週增重控制在 **0.25%–0.5% 體重/週**，過快的體重上升會使多餘熱量轉化為非功能性脂肪，進而降低短跑與過欄起跳的加速度效率。
                 """)
 
 # ==================== 【頁面 9：歷史分析紀錄】 ====================
@@ -4273,39 +4264,71 @@ elif page == "歷史分析紀錄 History Records":
 
         if role in ["coach", "trainer"]:
             team_athletes = get_team_athletes(team_code)
-            filter_user = st.selectbox("篩選選手 Filter Athlete", ["全隊所有人 Entire Team"] + team_athletes)
+            filter_user = st.selectbox("篩選隊內成員 Filter Athlete", ["全隊所有人 Entire Team"] + team_athletes)
             query_user = None if filter_user == "全隊所有人 Entire Team" else filter_user
             records = get_user_records(team_code, username=query_user)
         else:
             records = get_user_records(team_code, username=u["username"])
 
         if not records:
-            st.warning("尚無已儲存之分析紀錄 No Saved Analysis Records")
+            st.warning("尚無歷史紀錄 No Historical Records")
         else:
-            for r in records:
-                rec_id, rec_user, rec_mod, rec_title, rec_details_str, rec_time = r
-                details = json.loads(rec_details_str)
-                with st.expander(f"[{rec_time}] {rec_mod} - {rec_title} (建立者: {rec_user})"):
+            for rec in records:
+                rec_id, rec_user, rec_mod, rec_title, rec_details_str, rec_time = rec
+                try: details = json.loads(rec_details_str)
+                except Exception: details = {"raw_text": rec_details_str}
+
+                if not isinstance(details, dict):
+                    details = {"raw_text": str(details)}
+
+                # 僅保留使用者寫的紀錄名稱，不顯示建立時間與模組名稱
+                with st.expander(f"{rec_title}"):
+                    if role in ["coach", "trainer"]:
+                        st.caption(f"選手：{rec_user}")
+
                     if "image_b64" in details:
-                        st.image(details["image_b64"], caption="分析快照 Image Snapshot", use_container_width=True)
+                        st.image(details["image_b64"], caption="標記畫面快照", use_container_width=True)
                     if "angle_metrics" in details:
                         am = details["angle_metrics"]
-                        if isinstance(am, dict):
-                            if "rel_time_sec" in am:
-                                st.write(f"時間：`{am.get('rel_time_sec', '0.00')} 秒` ｜ 階段：`{am.get('phase_tag')}`")
-                                for a in am.get("angles", []): st.write(f"• **{a.get('name')}**：`{a.get('value')}`")
-                            else:
-                                st.write(f"影片 A 時間：`{am.get('time_A', '-')}s` ｜ 角度：`{am.get('angle_A', '-')}°`")
-                                st.write(f"影片 B 時間：`{am.get('time_B', '-')}s` ｜ 角度：`{am.get('angle_B', '-')}°`")
+                        if isinstance(am, dict) and ("angle_A" in am or "angle_B" in am):
+                            st.write(f"• **影片 A 時間**：`{am.get('time_A', '-')}s` ｜ **影片 A 角度**：`{am.get('angle_A', '未量測')}°`")
+                            st.write(f"• **影片 B 時間**：`{am.get('time_B', '-')}s` ｜ **影片 B 角度**：`{am.get('angle_B', '未量測')}°`")
                         else:
-                            for a in am: st.write(f"• **{a.get('name')}**：`{a.get('value')}`")
+                            angles = am.get("angles", []) if isinstance(am, dict) else am
+                            if isinstance(am, dict):
+                                if am.get("phase_tag"):
+                                    st.write(f"• **動作階段**：`{am.get('phase_tag')}` ｜ **時間**：`{am.get('rel_time_sec', '0.00')} 秒`")
+                            if isinstance(angles, list):
+                                for a in angles:
+                                    st.write(f"• **{a.get('name')}**：`{a.get('value')}`")
                     if "timer_metrics" in details:
                         tm = details["timer_metrics"]
-                        st.write(f"**總累積耗時 Total Time**：`{tm.get('total_time')} 秒`")
-                        splits = tm.get("splits", [])
-                        if splits: st.dataframe(pd.DataFrame(splits), use_container_width=True)
+                        st.write(f"總累積時間：`{tm.get('total_time')} 秒`")
+                        if tm.get("splits"):
+                            st.dataframe(pd.DataFrame(tm["splits"]), use_container_width=True)
+                    if "raw_text" in details:
+                        st.write(details["raw_text"])
 
-                    if role in ["coach", "trainer"] or rec_user == u["username"]:
-                        if st.button(f"刪除此筆紀錄 Delete Record #{rec_id}", key=f"del_{rec_id}"):
+                    st.markdown("---")
+                    st.markdown("**📝 動作分析筆記 Analysis Notes**")
+                    existing_note = details.get("user_notes", "")
+                    updated_note = st.text_area(
+                        "針對此紀錄撰寫或編輯筆記：",
+                        value=existing_note,
+                        height=95,
+                        placeholder="輸入動作技術心得、姿勢調整重點或教練講評...",
+                        key=f"rec_note_input_{rec_id}",
+                        label_visibility="collapsed"
+                    )
+
+                    btn_c1, btn_c2, _ = st.columns([1.2, 1.2, 2.6])
+                    with btn_c1:
+                        if st.button("💾 儲存筆記 Save Note", key=f"save_note_{rec_id}", use_container_width=True):
+                            details["user_notes"] = updated_note.strip()
+                            update_record_details(rec_id, details)
+                            st.success("筆記已儲存！")
+                            st.rerun()
+                    with btn_c2:
+                        if st.button("🗑️ 刪除紀錄 Delete", key=f"del_{rec_id}", use_container_width=True):
                             delete_record(rec_id)
                             st.rerun()
