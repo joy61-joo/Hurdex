@@ -3654,6 +3654,24 @@ elif page == "雙影同步 Dual Video Sync":
                 with st.form("save_dual_angle_form"):
                     rec_title_dual = st.text_input("紀錄名稱", value=f"雙影角度對比 {file_a.name} vs {file_b.name}")
                     sel_folder_dual = st.selectbox("存入資料夾 Folder", dual_folder_opts)
+
+                    target_ath_dual = ""
+                    share_flag_dual = False
+                    if u_curr_d["role"] == "player":
+                        share_flag_dual = st.checkbox("👁️ 分享此紀錄給教練檢視（不勾選則僅自己可見）", value=True)
+                    elif u_curr_d["role"] == "coach":
+                        ath_list_du = get_team_athletes(u_curr_d["team_code"])
+                        sel_ath_du = st.selectbox(
+                            "🎯 選擇此影片所屬選手 Select Athlete",
+                            ["（未指定選手 / 教練示範）"] + ath_list_du
+                        )
+                        target_ath_dual = "" if sel_ath_du.startswith("（未指定") else sel_ath_du
+                        share_flag_dual = st.checkbox(
+                            "👁️ 分享給該選手檢視（不勾選則僅教練自己可見）",
+                            value=True,
+                            disabled=(target_ath_dual == "")
+                        )
+
                     rec_note_dual = st.text_area("雙影對比筆記 (選填)", placeholder="可記錄左右動作差異、改善重點...", height=80)
                     if st.form_submit_button("💾 儲存至團隊數據庫", use_container_width=True):
                         u = st.session_state["user_info"]
@@ -3668,9 +3686,12 @@ elif page == "雙影同步 Dual Video Sync":
                             "雙影同步 Dual Video Sync",
                             rec_title_dual,
                             {
-                                "image_b64": captured_dual_img, 
+                                "image_b64": captured_dual_img,
                                 "angle_metrics": parsed_metrics,
                                 "user_notes": rec_note_dual.strip(),
+                                "created_by_role": u["role"],
+                                "target_athlete": target_ath_dual,
+                                "is_shared": bool(share_flag_dual) if (u["role"] == "player" or target_ath_dual) else False,
                                 "saved_at": str(datetime.datetime.now())
                             },
                             folder_name=sel_folder_dual
@@ -3690,16 +3711,24 @@ elif page == "跨期數據對比 Longitudinal Comparison":
         team_code = u["team_code"]
         role = u["role"]
 
-        if role in ["coach", "trainer"]:
-            team_athletes = get_team_athletes(team_code)
-            target_user = st.selectbox("請選擇選手 Select Athlete：", team_athletes) if team_athletes else None
+        if role == "trainer":
+            st.warning("🔒 依據系統權限規範，運動防護員帳號無法檢視技術與動作分析歷史紀錄。")
         else:
-            target_user = u["username"]
+            if role == "coach":
+                team_athletes = get_team_athletes(team_code)
+                target_user = st.selectbox("請選擇選手 Select Athlete：", team_athletes) if team_athletes else None
+            else:
+                target_user = u["username"]
 
-        if target_user:
-            mod_choice = st.radio("請選擇對比項目：", ["欄間秒數及速度計算 Hurdle Time & Speed Calculation", "關鍵影格角度量測 Keyframe Angle Measurement"])
-            records = get_user_records(team_code, username=target_user, module=mod_choice)
-
+            if target_user:
+                mod_choice = st.radio("請選擇對比項目：", ["欄間秒數及速度計算 Hurdle Time & Speed Calculation", "關鍵影格角度量測 Keyframe Angle Measurement"])
+                records = get_user_records(
+                    team_code,
+                    username=target_user,
+                    module=mod_choice,
+                    viewer_username=u["username"],
+                    viewer_role=role
+                )
             if not records:
                 st.warning(f"選手 {target_user} 在團隊中尚無 {mod_choice} 的歷史紀錄。")
             else:
@@ -4928,174 +4957,248 @@ elif page == "歷史分析紀錄 History Records":
     else:
         u = st.session_state["user_info"]
         role = u["role"]
-        is_staff = (role in ["coach", "trainer"])
 
-        if is_staff:
-            team_athletes = get_team_athletes(u["team_code"])
-            filter_user = st.selectbox("篩選選手紀錄 Filter Athlete", ["全隊所有人 Entire Team"] + team_athletes)
-            query_user = None if filter_user == "全隊所有人 Entire Team" else filter_user
-            all_records = get_records_with_folder(u["team_code"], username=query_user)
+        # 防護員原則上看不到任何分析的歷史紀錄
+        if role == "trainer":
+            st.warning("🔒 依據系統權限規範，運動防護員帳號無法檢視任何技術與動作分析歷史紀錄。")
         else:
-            all_records = get_records_with_folder(u["team_code"], username=u["username"])
+            is_coach = (role == "coach")
 
-        # 每位使用者只讀取自己建立的資料夾，選手資料夾不同步至教練與防護員端
-        custom_folders = get_record_folders(u["team_code"], username=u["username"])
+            if is_coach:
+                team_athletes = get_team_athletes(u["team_code"])
+                filter_user = st.selectbox("篩選選手紀錄 Filter Athlete", ["全隊所有人 Entire Team"] + team_athletes)
+                query_user = None if filter_user == "全隊所有人 Entire Team" else filter_user
+                all_records = get_records_with_folder(
+                    u["team_code"],
+                    username=query_user,
+                    viewer_username=u["username"],
+                    viewer_role=role
+                )
+            else:
+                all_records = get_records_with_folder(
+                    u["team_code"],
+                    username=u["username"],
+                    viewer_username=u["username"],
+                    viewer_role=role
+                )
 
-        # 資料夾新增與管理區
-        with st.expander("📁 資料夾管理 Folder Management（新增 / 重新命名 / 刪除資料夾）", expanded=False):
-            fc1, fc2 = st.columns(2)
-            with fc1:
-                st.markdown("##### ➕ 新增資料夾")
-                new_f_name = st.text_input("輸入新資料夾名稱", placeholder="例：2026全中運備戰、起跑攻欄技術、賽前測驗...", key="inp_new_folder_name")
-                if st.button("建立資料夾 Create Folder", key="btn_create_folder", use_container_width=True):
-                    ok, msg = create_record_folder(u["team_code"], u["username"], new_f_name)
-                    if ok:
-                        st.success(msg)
-                        st.rerun()
+            # 每位使用者只讀取自己建立的資料夾，互不同步
+            custom_folders = get_record_folders(u["team_code"], username=u["username"])
+
+            # 資料夾新增與管理區
+            with st.expander("📁 資料夾管理 Folder Management（新增 / 重新命名 / 刪除資料夾）", expanded=False):
+                fc1, fc2 = st.columns(2)
+                with fc1:
+                    st.markdown("##### ➕ 新增資料夾")
+                    new_f_name = st.text_input("輸入新資料夾名稱", placeholder="例：2026全中運備戰、起跑攻欄技術、賽前測驗...", key="inp_new_folder_name")
+                    if st.button("建立資料夾 Create Folder", key="btn_create_folder", use_container_width=True):
+                        ok, msg = create_record_folder(u["team_code"], u["username"], new_f_name)
+                        if ok:
+                            st.success(msg)
+                            st.rerun()
+                        else:
+                            st.error(msg)
+
+                with fc2:
+                    st.markdown("##### 🛠️ 管理現有資料夾")
+                    if not custom_folders:
+                        st.caption("目前尚未建立任何自訂資料夾。")
                     else:
-                        st.error(msg)
+                        sel_manage_folder = st.selectbox("選擇要管理的資料夾", custom_folders, key="sel_manage_folder")
+                        ren_col1, ren_col2 = st.columns([2, 1])
+                        with ren_col1:
+                            rename_f_input = st.text_input("新資料夾名稱", value=sel_manage_folder, label_visibility="collapsed", key="inp_rename_folder")
+                        with ren_col2:
+                            if st.button("✏️ 更名", key="btn_rename_folder", use_container_width=True):
+                                ok, msg = rename_record_folder(u["team_code"], u["username"], sel_manage_folder, rename_f_input)
+                                if ok:
+                                    st.success(msg)
+                                    st.rerun()
+                                else:
+                                    st.error(msg)
 
-            with fc2:
-                st.markdown("##### 🛠️ 管理現有資料夾")
-                if not custom_folders:
-                    st.caption("目前尚未建立任何自訂資料夾。")
-                else:
-                    sel_manage_folder = st.selectbox("選擇要管理的資料夾", custom_folders, key="sel_manage_folder")
-                    ren_col1, ren_col2 = st.columns([2, 1])
-                    with ren_col1:
-                        rename_f_input = st.text_input("新資料夾名稱", value=sel_manage_folder, label_visibility="collapsed", key="inp_rename_folder")
-                    with ren_col2:
-                        if st.button("✏️ 更名", key="btn_rename_folder", use_container_width=True):
-                            ok, msg = rename_record_folder(u["team_code"], u["username"], sel_manage_folder, rename_f_input)
-                            if ok:
-                                st.success(msg)
-                                st.rerun()
-                            else:
-                                st.error(msg)
-
-                    if st.button(f"🗑️ 刪除「{sel_manage_folder}」（內部紀錄將自動移至「未分類」）", key="btn_del_folder", use_container_width=True):
-                        delete_record_folder(u["team_code"], u["username"], sel_manage_folder)
-                        st.success(f"已刪除資料夾「{sel_manage_folder}」，原有紀錄已安全保留於「未分類」。")
-                        st.rerun()
-
-        if not all_records:
-            st.info("目前資料庫中尚無任何已儲存的分析紀錄。")
-        else:
-            # 統計各資料夾紀錄數量（不屬於本人資料夾的紀錄統一計入「未分類」）
-            folder_counts = {"全部紀錄": len(all_records), "未分類": 0}
-            for f in custom_folders:
-                folder_counts[f] = 0
-
-            for r in all_records:
-                raw_tag = r[6] if len(r) > 6 and r[6] else "未分類"
-                f_tag = raw_tag if raw_tag in folder_counts else "未分類"
-                folder_counts[f_tag] += 1
-
-            tab_folder_names = ["全部紀錄", "未分類"] + custom_folders
-            tab_labels = [f"📂 {fname} ({folder_counts.get(fname, 0)})" for fname in tab_folder_names]
-            folder_tabs = st.tabs(tab_labels)
-
-            all_folder_choices = ["未分類"] + custom_folders
-
-            def render_record_card(rec, tab_prefix):
-                rec_id, rec_user, mod, title, details_str, ts, rec_folder = rec
-                try:
-                    details = json.loads(details_str)
-                except Exception:
-                    details = {"raw": details_str}
-
-                display_folder = rec_folder if rec_folder in all_folder_choices else "未分類"
-                user_prefix = f"選手: {rec_user} ｜ " if is_staff else ""
-                folder_badge = f"📁 {display_folder} ｜ " if tab_prefix == "全部紀錄" else ""
-                expander_label = f"{folder_badge}{user_prefix}{mod} - {title}"
-
-                with st.expander(expander_label):
-                    # 移動資料夾工具列
-                    mv_c1, mv_c2 = st.columns([3, 1])
-                    with mv_c1:
-                        cur_f_idx = all_folder_choices.index(display_folder) if display_folder in all_folder_choices else 0
-                        target_move_folder = st.selectbox(
-                            "所屬資料夾 Folder",
-                            all_folder_choices,
-                            index=cur_f_idx,
-                            key=f"mv_sel_{tab_prefix}_{rec_id}"
-                        )
-                    with mv_c2:
-                        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-                        if st.button("📂 移動資料夾", key=f"mv_btn_{tab_prefix}_{rec_id}", use_container_width=True):
-                            move_record_to_folder(rec_id, target_move_folder)
-                            st.success(f"已移動至「{target_move_folder}」")
+                        if st.button(f"🗑️ 刪除「{sel_manage_folder}」（內部紀錄將自動移至「未分類」）", key="btn_del_folder", use_container_width=True):
+                            delete_record_folder(u["team_code"], u["username"], sel_manage_folder)
+                            st.success(f"已刪除資料夾「{sel_manage_folder}」，原有紀錄已安全保留於「未分類」。")
                             st.rerun()
 
-                    st.markdown("---")
+            if not all_records:
+                st.info("目前資料庫中尚無任何可檢視的分析紀錄。")
+            else:
+                folder_counts = {"全部紀錄": len(all_records), "未分類": 0}
+                for f in custom_folders:
+                    folder_counts[f] = 0
 
-                    if "雙影同步" in mod:
-                        st.markdown("##### 雙影同步角度對比合成圖 Dual Video Angle Snapshot")
-                        if "image_b64" in details and details["image_b64"]:
-                            st.image(details["image_b64"], caption=title, use_container_width=True)
-                        am = details.get("angle_metrics", {})
-                        if isinstance(am, dict) and ("angle_A" in am or "angle_B" in am):
-                            st.write(f"• **影片 A (時間 {am.get('time_A', '-')}s)**：關節角度 `{am.get('angle_A') if am.get('angle_A') is not None else '未量測'}°`")
-                            st.write(f"• **影片 B (時間 {am.get('time_B', '-')}s)**：關節角度 `{am.get('angle_B') if am.get('angle_B') is not None else '未量測'}°`")
+                for r in all_records:
+                    raw_tag = r[6] if len(r) > 6 and r[6] else "未分類"
+                    f_tag = raw_tag if raw_tag in folder_counts else "未分類"
+                    folder_counts[f_tag] += 1
 
-                    elif "角度量測" in mod:
-                        col1, col2 = st.columns([1.2, 0.8])
-                        with col1:
+                tab_folder_names = ["全部紀錄", "未分類"] + custom_folders
+                tab_labels = [f"📂 {fname} ({folder_counts.get(fname, 0)})" for fname in tab_folder_names]
+                folder_tabs = st.tabs(tab_labels)
+
+                all_folder_choices = ["未分類"] + custom_folders
+
+                def render_record_card(rec, tab_prefix):
+                    rec_id, rec_user, mod, title, details_str, ts, rec_folder = rec
+                    details, created_by_role, target_athlete, is_shared = _parse_record_sharing_meta(rec_user, details_str)
+
+                    display_folder = rec_folder if rec_folder in all_folder_choices else "未分類"
+                    folder_badge = f"📁 {display_folder} ｜ " if tab_prefix == "全部紀錄" else ""
+
+                    # 組合來源與分享狀態標籤
+                    if is_coach:
+                        if created_by_role == "coach":
+                            ath_txt = f"選手: {target_athlete}" if target_athlete else "教練示範"
+                            share_txt = "👁️ 已分享給選手" if (target_athlete and is_shared) else "🔒 僅教練可見"
+                            role_badge = f"👨‍🏫 教練分析 ({ath_txt} · {share_txt}) ｜ "
+                        else:
+                            role_badge = f"選手: {rec_user} (👁️ 選手分享) ｜ "
+                    else:
+                        if rec_user == u["username"]:
+                            share_txt = "👁️ 已分享給教練" if is_shared else "🔒 僅自己可見"
+                            role_badge = f"{share_txt} ｜ "
+                        else:
+                            role_badge = f"👨‍🏫 教練分享 ({rec_user}) ｜ "
+
+                    expander_label = f"{folder_badge}{role_badge}{mod} - {title}"
+
+                    with st.expander(expander_label):
+                        # 移動資料夾工具列
+                        mv_c1, mv_c2 = st.columns([3, 1])
+                        with mv_c1:
+                            cur_f_idx = all_folder_choices.index(display_folder) if display_folder in all_folder_choices else 0
+                            target_move_folder = st.selectbox(
+                                "所屬資料夾 Folder",
+                                all_folder_choices,
+                                index=cur_f_idx,
+                                key=f"mv_sel_{tab_prefix}_{rec_id}"
+                            )
+                        with mv_c2:
+                            st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                            if st.button("📂 移動資料夾", key=f"mv_btn_{tab_prefix}_{rec_id}", use_container_width=True):
+                                move_record_to_folder(rec_id, target_move_folder)
+                                st.success(f"已移動至「{target_move_folder}」")
+                                st.rerun()
+
+                        # 建立者本人可隨時調整分享對象與可見權限
+                        if rec_user == u["username"]:
+                            st.markdown("##### 🔐 分享與可見權限設定")
+                            if role == "player":
+                                sh_c1, sh_c2 = st.columns([3, 1])
+                                with sh_c1:
+                                    upd_share_p = st.checkbox(
+                                        "👁️ 分享此紀錄給教練檢視（不勾選則僅自己可見）",
+                                        value=is_shared,
+                                        key=f"upd_sh_p_{tab_prefix}_{rec_id}"
+                                    )
+                                with sh_c2:
+                                    if st.button("儲存權限", key=f"btn_sh_p_{tab_prefix}_{rec_id}", use_container_width=True):
+                                        details["created_by_role"] = "player"
+                                        details["is_shared"] = bool(upd_share_p)
+                                        update_record_details(rec_id, details)
+                                        st.success("分享設定已更新！")
+                                        st.rerun()
+                            elif role == "coach":
+                                ath_opts_edit = ["（未指定選手 / 教練示範）"] + get_team_athletes(u["team_code"])
+                                cur_ath_label = target_athlete if target_athlete in ath_opts_edit else "（未指定選手 / 教練示範）"
+                                sc1, sc2, sc3 = st.columns([2, 2, 1])
+                                with sc1:
+                                    upd_ath_label = st.selectbox(
+                                        "指定選手",
+                                        ath_opts_edit,
+                                        index=ath_opts_edit.index(cur_ath_label),
+                                        key=f"upd_ath_c_{tab_prefix}_{rec_id}"
+                                    )
+                                upd_ath_val = "" if upd_ath_label.startswith("（未指定") else upd_ath_label
+                                with sc2:
+                                    st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                                    upd_share_c = st.checkbox(
+                                        "👁️ 分享給該選手檢視",
+                                        value=(is_shared and upd_ath_val != ""),
+                                        disabled=(upd_ath_val == ""),
+                                        key=f"upd_sh_c_{tab_prefix}_{rec_id}"
+                                    )
+                                with sc3:
+                                    st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                                    if st.button("儲存權限", key=f"btn_sh_c_{tab_prefix}_{rec_id}", use_container_width=True):
+                                        details["created_by_role"] = "coach"
+                                        details["target_athlete"] = upd_ath_val
+                                        details["is_shared"] = bool(upd_share_c) if upd_ath_val else False
+                                        update_record_details(rec_id, details)
+                                        st.success("分享設定已更新！")
+                                        st.rerun()
+
+                        st.markdown("---")
+
+                        if "雙影同步" in mod:
+                            st.markdown("##### 雙影同步角度對比合成圖 Dual Video Angle Snapshot")
                             if "image_b64" in details and details["image_b64"]:
                                 st.image(details["image_b64"], caption=title, use_container_width=True)
-                        with col2:
                             am = details.get("angle_metrics", {})
-                            st.write(f"**相對時間**：`{am.get('rel_time_sec', '0.00')} 秒` (起點 T0: `{am.get('t0_sec', '0.00')} 秒`)")
-                            st.write(f"**關鍵動作階段**：`{am.get('phase_tag', '-')}`")
-                            angles = am.get("angles", []) if isinstance(am, dict) else am
-                            if isinstance(angles, list):
-                                st.markdown("**量測關節角度明細：**")
-                                for a in angles:
-                                    id_prefix = f"#{a['id']} " if a.get("id") else ""
-                                    color_tag = f"（{a['color_name']}線）" if a.get("color_name") else ""
-                                    st.write(f"• **{id_prefix}{a['name']}**{color_tag}：`{a['value']}`")
+                            if isinstance(am, dict) and ("angle_A" in am or "angle_B" in am):
+                                st.write(f"• **影片 A (時間 {am.get('time_A', '-')}s)**：關節角度 `{am.get('angle_A') if am.get('angle_A') is not None else '未量測'}°`")
+                                st.write(f"• **影片 B (時間 {am.get('time_B', '-')}s)**：關節角度 `{am.get('angle_B') if am.get('angle_B') is not None else '未量測'}°`")
 
-                    elif "欄間秒數" in mod:
-                        tm = details.get("timer_metrics", {})
-                        st.write(f"**總累積耗時**：`{tm.get('total_time', '-')} 秒`")
-                        splits = tm.get("splits", [])
-                        if splits:
-                            st.table(pd.DataFrame(splits).rename(columns={
-                                "segment": "階段",
-                                "cum_sec": "累積時間(s)",
-                                "split_sec": "單段耗時(s)",
-                                "speed_ms": "平均速度(m/s)"
-                            }))
+                        elif "角度量測" in mod:
+                            col1, col2 = st.columns([1.2, 0.8])
+                            with col1:
+                                if "image_b64" in details and details["image_b64"]:
+                                    st.image(details["image_b64"], caption=title, use_container_width=True)
+                            with col2:
+                                am = details.get("angle_metrics", {})
+                                st.write(f"**相對時間**：`{am.get('rel_time_sec', '0.00')} 秒` (起點 T0: `{am.get('t0_sec', '0.00')} 秒`)")
+                                st.write(f"**關鍵動作階段**：`{am.get('phase_tag', '-')}`")
+                                angles = am.get("angles", []) if isinstance(am, dict) else am
+                                if isinstance(angles, list):
+                                    st.markdown("**量測關節角度明細：**")
+                                    for a in angles:
+                                        id_prefix = f"#{a['id']} " if a.get("id") else ""
+                                        color_tag = f"（{a['color_name']}線）" if a.get("color_name") else ""
+                                        st.write(f"• **{id_prefix}{a['name']}**{color_tag}：`{a['value']}`")
 
-                    st.markdown("---")
-                    current_note = details.get("user_notes", "") if isinstance(details, dict) else ""
-                    new_note = st.text_area("分析筆記與教練回饋 Notes & Feedback", value=current_note, height=90, key=f"note_{tab_prefix}_{rec_id}")
-                    if st.button("儲存筆記 Save Note", key=f"save_note_{tab_prefix}_{rec_id}"):
-                        if isinstance(details, dict):
-                            details["user_notes"] = new_note
-                            update_record_details(rec_id, details)
-                            st.success("筆記已成功儲存！")
-                            st.rerun()
+                        elif "欄間秒數" in mod:
+                            tm = details.get("timer_metrics", {})
+                            st.write(f"**總累積耗時**：`{tm.get('total_time', '-')} 秒`")
+                            splits = tm.get("splits", [])
+                            if splits:
+                                st.table(pd.DataFrame(splits).rename(columns={
+                                    "segment": "階段",
+                                    "cum_sec": "累積時間(s)",
+                                    "split_sec": "單段耗時(s)",
+                                    "speed_ms": "平均速度(m/s)"
+                                }))
 
-                    if is_staff or rec_user == u["username"]:
-                        if st.button("刪除紀錄 Delete Record", key=f"del_{tab_prefix}_{rec_id}"):
-                            delete_record(rec_id)
-                            st.rerun()
+                        st.markdown("---")
+                        current_note = details.get("user_notes", "") if isinstance(details, dict) else ""
+                        new_note = st.text_area("分析筆記與教練回饋 Notes & Feedback", value=current_note, height=90, key=f"note_{tab_prefix}_{rec_id}")
+                        if st.button("儲存筆記 Save Note", key=f"save_note_{tab_prefix}_{rec_id}"):
+                            if isinstance(details, dict):
+                                details["user_notes"] = new_note
+                                update_record_details(rec_id, details)
+                                st.success("筆記已成功儲存！")
+                                st.rerun()
 
-            for idx, fname in enumerate(tab_folder_names):
-                with folder_tabs[idx]:
-                    if fname == "全部紀錄":
-                        filtered_recs = all_records
-                    elif fname == "未分類":
-                        filtered_recs = [
-                            r for r in all_records
-                            if (r[6] if len(r) > 6 and r[6] else "未分類") not in custom_folders
-                        ]
-                    else:
-                        filtered_recs = [r for r in all_records if (r[6] if len(r) > 6 and r[6] else "未分類") == fname]
+                        if is_coach or rec_user == u["username"]:
+                            if st.button("刪除紀錄 Delete Record", key=f"del_{tab_prefix}_{rec_id}"):
+                                delete_record(rec_id)
+                                st.rerun()
 
-                    if not filtered_recs:
-                        st.info(f"資料夾「{fname}」中目前尚無紀錄。您可以在其他頁籤展開紀錄並將其移動至此資料夾！")
-                    else:
-                        for rec in filtered_recs:
-                            render_record_card(rec, fname)
+                for idx, fname in enumerate(tab_folder_names):
+                    with folder_tabs[idx]:
+                        if fname == "全部紀錄":
+                            filtered_recs = all_records
+                        elif fname == "未分類":
+                            filtered_recs = [
+                                r for r in all_records
+                                if (r[6] if len(r) > 6 and r[6] else "未分類") not in custom_folders
+                            ]
+                        else:
+                            filtered_recs = [r for r in all_records if (r[6] if len(r) > 6 and r[6] else "未分類") == fname]
+
+                        if not filtered_recs:
+                            st.info(f"資料夾「{fname}」中目前尚無紀錄。您可以在其他頁籤展開紀錄並將其移動至此資料夾！")
+                        else:
+                            for rec in filtered_recs:
+                                render_record_card(rec, fname)
