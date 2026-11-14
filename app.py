@@ -4218,9 +4218,23 @@ elif page == "課表紀錄 Training Plan":
                                         st.markdown(":green[良好無傷病 No Active Injury]")
 
                                 with col_inj_map:
-                                    if "body_map_img_b64" in parsed_notes and parsed_notes["body_map_img_b64"]:
-                                        st.image(parsed_notes["body_map_img_b64"], caption="當時人體標記圖 Body Map Snapshot", use_container_width=True)
+            if "body_map_img_b64" in parsed_notes and parsed_notes["body_map_img_b64"]:
+                import base64, io
+                import numpy as np
+                from PIL import Image
 
+                _b64_val = parsed_notes["body_map_img_b64"]
+                try:
+                    _raw_b64 = _b64_val.split(",", 1)[1] if "," in _b64_val else _b64_val
+                    _im = Image.open(io.BytesIO(base64.b64decode(_raw_b64))).convert("RGB")
+                    _arr = np.array(_im)
+                    _black_mask = (_arr[:, :, 0] < 25) & (_arr[:, :, 1] < 25) & (_arr[:, :, 2] < 25)
+                    if _black_mask.mean() > 0.04:
+                        _arr[_black_mask] = [203, 213, 225]
+                        _im = Image.fromarray(_arr)
+                    st.image(_im, caption="當時人體標記圖 Body Map Snapshot", use_container_width=True)
+                except Exception:
+                    st.image(_b64_val, caption="當時人體標記圖 Body Map Snapshot", use_container_width=True)
                                 st.markdown(f"**課表細節：**\n```text\n{p_content}\n```")
                                 u_notes = parsed_notes.get("user_notes", "")
                                 if u_notes:
