@@ -4216,25 +4216,9 @@ elif page == "課表紀錄 Training Plan":
                                                 st.markdown(f"• :green[**{area}** ｜ 疼痛 VAS: 0/10 (痊癒)]{ptypes_badges}{n_fmt}", unsafe_allow_html=True)
                                     else:
                                         st.markdown(":green[良好無傷病 No Active Injury]")
-
                                 with col_inj_map:
-                                    if "body_map_img_b64" in parsed_notes and parsed_notes["body_map_img_b64"]:
-                                        import base64, io
-                                        import numpy as np
-                                        from PIL import Image
-                    
-                                        _b64_val = parsed_notes["body_map_img_b64"]
-                                        try:
-                                            _raw_b64 = _b64_val.split(",", 1)[1] if "," in _b64_val else _b64_val
-                                            _im = Image.open(io.BytesIO(base64.b64decode(_raw_b64))).convert("RGB")
-                                            _arr = np.array(_im)
-                                            _black_mask = (_arr[:, :, 0] < 25) & (_arr[:, :, 1] < 25) & (_arr[:, :, 2] < 25)
-                                            if _black_mask.mean() > 0.04:
-                                                _arr[_black_mask] = [203, 213, 225]
-                                                _im = Image.fromarray(_arr)
-                                            st.image(_im, caption="當時人體標記圖 Body Map Snapshot", use_container_width=True)
-                                        except Exception:
-                                            st.image(_b64_val, caption="當時人體標記圖 Body Map Snapshot", use_container_width=True)
+                                                if "body_map_img_b64" in parsed_notes and parsed_notes["body_map_img_b64"]:
+                                                    st.image(parsed_notes["body_map_img_b64"], caption="當時人體標記圖 Body Map Snapshot", use_container_width=True)
                                 st.markdown(f"**課表細節：**\n```text\n{p_content}\n```")
                                 u_notes = parsed_notes.get("user_notes", "")
                                 if u_notes:
@@ -4738,27 +4722,41 @@ elif page == "課表紀錄 Training Plan":
                             ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, 440, 400);
                             const s1 = new XMLSerializer().serializeToString(document.getElementById('svgF'));
                             const s2 = new XMLSerializer().serializeToString(document.getElementById('svgB'));
-                            const i1 = new Image(); const i2 = new Image();
-                            i1.onload = function() {
-                                ctx.drawImage(i1, 10, 10, 190, 380);
-                                i2.onload = function() {
-                                    ctx.drawImage(i2, 230, 10, 190, 380);
-                                    pins.forEach((p, idx) => {
-                                        const px = (p.side === 'F' ? 10 : 230) + p.rx * 190;
-                                        const py = 10 + p.ry * 380;
-                                        ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc(px, py, 9, 0, Math.PI*2); ctx.fill();
-                                        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.stroke();
-                                        ctx.fillStyle = '#ffffff'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                                        ctx.fillText(idx + 1, px, py);
-                                    });
-                                    const textAreas = window.parent.document.querySelectorAll('textarea');
-                                    let targetTA = null;
-                                    textAreas.forEach(ta => { if ((ta.getAttribute('aria-label') || '').includes('body_map_img_b64')) targetTA = ta; });
-                                    if (targetTA) syncVal(targetTA, pins.length > 0 ? can.toDataURL('image/png') : "");
-                                };
-                                i2.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(s2)));
-                            };
-                            i1.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(s1)));
+            const pageStyles = Array.from(document.querySelectorAll('style')).map(st => st.innerHTML).join('\n');
+            const injectSvgStyle = (svgStr) => svgStr.replace(
+                /(<svg[^>]*>)/i,
+                '$1<style>path,rect,circle,ellipse,polygon{fill:#f1f5f9;stroke:#64748b;stroke-width:1.5;}\n' + pageStyles + '</style>'
+            );
+
+            const i1 = new Image(); const i2 = new Image();
+            i1.onload = function() {
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, can.width, can.height);
+                ctx.fillStyle = '#2563eb';
+                ctx.font = 'bold 13px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('正面 Front', 105, 18);
+                ctx.fillText('背面 Back', 325, 18);
+
+                ctx.drawImage(i1, 10, 10, 190, 380);
+                i2.onload = function() {
+                    ctx.drawImage(i2, 230, 10, 190, 380);
+                    pins.forEach((p, idx) => {
+                        const px = (p.side === 'F' ? 10 : 230) + p.rx * 190;
+                        const py = 10 + p.ry * 380;
+                        ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc(px, py, 9, 0, Math.PI*2); ctx.fill();
+                        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.stroke();
+                        ctx.fillStyle = '#ffffff'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                        ctx.fillText(idx + 1, px, py);
+                    });
+                    const textAreas = window.parent.document.querySelectorAll('textarea');
+                    let targetTA = null;
+                    textAreas.forEach(ta => { if ((ta.getAttribute('aria-label') || '').includes('body_map_img_b64')) targetTA = ta; });
+                    if (targetTA) syncVal(targetTA, pins.length > 0 ? can.toDataURL('image/png') : "");
+                };
+                i2.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(injectSvgStyle(s2))));
+            };
+            i1.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(injectSvgStyle(s1))));
                         }
 
                         function renderPins() {
