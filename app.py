@@ -3139,7 +3139,7 @@ elif page == "角度分析 Angle Analysis":
                         with st.container(border=True):
                             st.markdown(st.session_state["ai_timer_single_res"])
 
-if st.session_state["user_info"]:
+                    if st.session_state["user_info"]:
                         u_curr_t = st.session_state["user_info"]
                         timer_folder_opts = ["未分類"] + get_record_folders(u_curr_t["team_code"], username=u_curr_t["username"])
                         with st.form("save_timer_form"):
@@ -3175,7 +3175,7 @@ if st.session_state["user_info"]:
                                     "saved_at": str(datetime.datetime.now())
                                 }, folder_name=sel_folder_timer)
                                 st.success("儲存成功！")
-                except Exception: pass
+                    except Exception: pass
 
 # ==================== 【頁面 5：雙影同步 Dual Video Sync】 ====================
 elif page == "雙影同步 Dual Video Sync":
