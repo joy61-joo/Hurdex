@@ -4722,7 +4722,7 @@ elif page == "課表紀錄 Training Plan":
                             ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, 440, 400);
                             const s1 = new XMLSerializer().serializeToString(document.getElementById('svgF'));
                             const s2 = new XMLSerializer().serializeToString(document.getElementById('svgB'));
-            const pageStyles = Array.from(document.querySelectorAll('style')).map(st => st.innerHTML).join('\n');
+            const pageStyles = Array.from(document.querySelectorAll('style')).map(st => st.innerHTML).join(' ');
             const injectSvgStyle = (svgStr) => svgStr.replace(
                 /(<svg[^>]*>)/i,
                 '$1<style>path,rect,circle,ellipse,polygon{fill:#f1f5f9;stroke:#64748b;stroke-width:1.5;} ' + pageStyles + '</style>'
