@@ -488,7 +488,9 @@ def evaluate_daily_meals(
     d_txt: str,
     s_txt: str,
 ) -> Dict[str, Any]:
-    """評估田徑跨欄運動員單日三餐與補給之熱量及三大營養素"""
+    """評估田徑跨欄運動員單日三餐與補給之熱量及三大營養素（含 503 自動重試與備援切換）"""
+    import time
+
     system_instruction = (
         "你是一位專精於田徑跨欄與爆發力項目的運動營養師。"
         "請根據運動員的三餐與補給內容，客觀估算每餐與全日總熱量（kcal）及三大營養素（蛋白質、碳水化合物、脂肪），"
@@ -526,19 +528,37 @@ def evaluate_daily_meals(
 }}
 """
     client = _get_gemini_client()
-    response = client.models.generate_content(
-        model=MODEL_ID,
-        contents=user_prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=system_instruction,
-            temperature=0.3,
-            response_mime_type="application/json",
-        ),
-    )
+    candidate_models = [MODEL_ID, MODEL_ID, "gemini-2.5-flash"]
+    last_err = None
+    raw_text = ""
 
-    raw_text = (response.text or "").strip()
+    for attempt_idx, target_model in enumerate(candidate_models):
+        try:
+            response = client.models.generate_content(
+                model=target_model,
+                contents=user_prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    temperature=0.3,
+                    response_mime_type="application/json",
+                ),
+            )
+            raw_text = (response.text or "").strip()
+            if raw_text:
+                break
+        except Exception as e:
+            last_err = e
+            err_str = str(e)
+            if any(code in err_str for code in ["503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED", "overloaded"]):
+                if attempt_idx < len(candidate_models) - 1:
+                    time.sleep(2)
+                    continue
+            raise
+
     if not raw_text:
-        raise RuntimeError("AI 模型未回傳任何文字內容，請檢查 API Key 額度或模型設定。")
+        if last_err:
+            raise last_err
+        raise RuntimeError("AI 模型未回傳任何文字內容，請稍後再試。")
 
     start_idx = raw_text.find("{")
     end_idx = raw_text.rfind("}")
