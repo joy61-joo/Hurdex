@@ -4956,7 +4956,272 @@ elif page == "體重監控 Weight Monitoring":
                         "Notes": "備註"
                     })
                     st.dataframe(disp_df, use_container_width=True, hide_index=True)
+                    # --- AI 三餐熱量與營養評估模組 ---
+        st.markdown("---")
+        st.subheader("🍱 AI 三餐熱量與營養評估 AI Meal & Calorie Assessment")
 
+        u_meal = st.session_state["user_info"]
+        meal_role = u_meal["role"]
+
+        if meal_role in ("coach", "trainer"):
+            meal_athletes = get_team_athletes(u_meal["team_code"])
+            if meal_athletes:
+                target_meal_user = st.selectbox(
+                    "選擇要檢視／評估的選手 Select Athlete",
+                    meal_athletes,
+                    key="sel_meal_athlete"
+                )
+            else:
+                target_meal_user = None
+                st.info("目前隊伍中尚無選手帳號。")
+        else:
+            target_meal_user = u_meal["username"]
+
+        def _run_meal_ai_assessment(meal_date_str, cur_weight, goal_mode, training_load, b_txt, l_txt, d_txt, s_txt):
+            import os
+            api_key = os.environ.get("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY", "")
+            if not api_key:
+                raise RuntimeError("尚未設定 GEMINI_API_KEY，請先於系統環境變數或 Streamlit Secrets 中設定。")
+
+            prompt = f"""
+你是一位專精於田徑跨欄與爆發力項目的運動營養師。請根據以下運動員今日的三餐與補給內容，估算每餐與全日總熱量及三大營養素（蛋白質、碳水化合物、脂肪），並提供具體實用的運動營養調整建議。
+
+【運動員基本狀態】
+- 日期：{meal_date_str}
+- 目前體重：{cur_weight} kg
+- 體重管理目標：{goal_mode}
+- 今日訓練負荷：{training_load}
+
+【今日飲食內容】
+- 早餐：{b_txt if b_txt.strip() else "未進食 / 未填寫"}
+- 午餐：{l_txt if l_txt.strip() else "未進食 / 未填寫"}
+- 晚餐：{d_txt if d_txt.strip() else "未進食 / 未填寫"}
+- 點心 / 訓練前後補給：{s_txt if s_txt.strip() else "無"}
+
+請嚴格只回傳合法的 JSON 格式（不要包含 ```json 標記或多餘文字），結構如下：
+{{
+  "total_calories": 2250,
+  "total_protein_g": 135,
+  "total_carbs_g": 280,
+  "total_fat_g": 62,
+  "meals_breakdown": [
+    {{"meal": "早餐", "items_summary": "簡述食物", "calories": 550, "protein_g": 30, "carbs_g": 65, "fat_g": 18}},
+    {{"meal": "午餐", "items_summary": "簡述食物", "calories": 750, "protein_g": 45, "carbs_g": 95, "fat_g": 20}},
+    {{"meal": "晚餐", "items_summary": "簡述食物", "calories": 700, "protein_g": 40, "carbs_g": 85, "fat_g": 18}},
+    {{"meal": "點心/補給", "items_summary": "簡述食物", "calories": 250, "protein_g": 20, "carbs_g": 35, "fat_g": 6}}
+  ],
+  "target_comparison": "說明今日熱量與蛋白質（每公斤體重攝取量）是否符合該訓練負荷與體重目標",
+  "nutrition_advice": "給予2至3點具體可執行的下一餐或明日飲食微調建議（繁體中文）"
+}}
+"""
+            raw_text = ""
+            try:
+                from google import genai
+                client = genai.Client(api_key=api_key)
+                resp = client.models.generate_content(
+                    model="gemini-3.8-flash",
+                    contents=prompt
+                )
+                raw_text = resp.text or ""
+            except ImportError:
+                import google.generativeai as genai_legacy
+                genai_legacy.configure(api_key=api_key)
+                model = genai_legacy.GenerativeModel("gemini-3.8-flash")
+                resp = model.generate_content(prompt)
+                raw_text = resp.text or ""
+
+            cleaned = raw_text.strip()
+            if cleaned.startswith("```"):
+                cleaned = cleaned.split("\n", 1)[-1]
+            if cleaned.endswith("```"):
+                cleaned = cleaned.rsplit("```", 1)[0]
+            return json.loads(cleaned.strip())
+
+        if target_meal_user:
+            tab_meal_ai, tab_meal_hist = st.tabs([
+                "🤖 輸入三餐並由 AI 評估",
+                "📊 歷次飲食熱量紀錄"
+            ])
+
+            with tab_meal_ai:
+                mc1, mc2, mc3, mc4 = st.columns(4)
+                with mc1:
+                    meal_date = st.date_input("飲食日期 Date", value=datetime.date.today(), key="meal_eval_date")
+                with mc2:
+                    meal_weight_kg = st.number_input("目前體重 (kg)", min_value=30.0, max_value=150.0, value=60.0, step=0.1, key="meal_eval_wt")
+                with mc3:
+                    meal_goal = st.selectbox(
+                        "體重管理目標 Goal",
+                        ["維持體重與運動表現", "健康減脂（保留肌肉量）", "增肌與提升爆發力", "賽前體重微調與肝醣超補"],
+                        key="meal_eval_goal"
+                    )
+                with mc4:
+                    meal_load = st.selectbox(
+                        "今日訓練強度 Training Load",
+                        ["高強度專項／速度耐力日", "中等強度技術／重量訓練日", "低強度恢復／動態伸展日", "完全休息日"],
+                        key="meal_eval_load"
+                    )
+
+                col_m1, col_m2 = st.columns(2)
+                with col_m1:
+                    breakfast_input = st.text_area(
+                        "🌅 早餐 Breakfast",
+                        placeholder="例：無糖豆漿 400ml、全麥蛋餅一份、水煮蛋 1 顆、香蕉 1 根",
+                        height=90,
+                        key="meal_inp_breakfast"
+                    )
+                    dinner_input = st.text_area(
+                        "🌙 晚餐 Dinner",
+                        placeholder="例：白飯一碗、煎鮭魚 150g、燙青菜兩份、味噌豆腐湯",
+                        height=90,
+                        key="meal_inp_dinner"
+                    )
+                with col_m2:
+                    lunch_input = st.text_area(
+                        "☀️ 午餐 Lunch",
+                        placeholder="例：雞胸肉便當（白飯八分滿、滷蛋、三樣配菜去油）",
+                        height=90,
+                        key="meal_inp_lunch"
+                    )
+                    snack_input = st.text_area(
+                        "⚡ 點心／訓練前後補給 Snacks & Supplements",
+                        placeholder="例：訓後乳清蛋白 1 匙 + 運動飲料 300ml、無調味堅果一小把",
+                        height=90,
+                        key="meal_inp_snack"
+                    )
+
+                if st.button("🤖 AI 評估三餐熱量與營養", key="btn_eval_meals_ai", use_container_width=True):
+                    if not any([breakfast_input.strip(), lunch_input.strip(), dinner_input.strip(), snack_input.strip()]):
+                        st.warning("請至少輸入一餐或補給內容再進行評估！")
+                    else:
+                        with st.spinner("AI 運動營養師正在計算熱量與三大營養素比例..."):
+                            try:
+                                eval_res = _run_meal_ai_assessment(
+                                    str(meal_date),
+                                    meal_weight_kg,
+                                    meal_goal,
+                                    meal_load,
+                                    breakfast_input,
+                                    lunch_input,
+                                    dinner_input,
+                                    snack_input
+                                )
+                                st.session_state["latest_meal_ai_result"] = {
+                                    "target_user": target_meal_user,
+                                    "date": str(meal_date),
+                                    "weight_kg": meal_weight_kg,
+                                    "goal": meal_goal,
+                                    "training_load": meal_load,
+                                    "raw_inputs": {
+                                        "breakfast": breakfast_input.strip(),
+                                        "lunch": lunch_input.strip(),
+                                        "dinner": dinner_input.strip(),
+                                        "snack": snack_input.strip()
+                                    },
+                                    "ai_result": eval_res
+                                }
+                            except Exception as e:
+                                st.error(f"AI 評估發生錯誤：{e}")
+
+                latest_meal = st.session_state.get("latest_meal_ai_result")
+                if latest_meal and latest_meal.get("target_user") == target_meal_user:
+                    res = latest_meal["ai_result"]
+                    wt_val = float(latest_meal.get("weight_kg", 60.0)) or 60.0
+                    tot_kcal = res.get("total_calories", 0)
+                    tot_pro = res.get("total_protein_g", 0)
+                    tot_carb = res.get("total_carbs_g", 0)
+                    tot_fat = res.get("total_fat_g", 0)
+
+                    st.markdown("##### 📊 AI 營養估算總覽")
+                    k1, k2, k3, k4 = st.columns(4)
+                    k1.metric("總攝取熱量", f"{tot_kcal} kcal", f"{round(tot_kcal / wt_val, 1)} kcal/kg")
+                    k2.metric("蛋白質 Protein", f"{tot_pro} g", f"{round(tot_pro / wt_val, 2)} g/kg")
+                    k3.metric("碳水化合物 Carbs", f"{tot_carb} g", f"{round(tot_carb / wt_val, 2)} g/kg")
+                    k4.metric("脂肪 Fat", f"{tot_fat} g", f"{round(tot_fat / wt_val, 2)} g/kg")
+
+                    breakdown = res.get("meals_breakdown", [])
+                    if breakdown:
+                        df_meal = pd.DataFrame(breakdown).rename(columns={
+                            "meal": "餐別",
+                            "items_summary": "食物內容摘要",
+                            "calories": "熱量 (kcal)",
+                            "protein_g": "蛋白質 (g)",
+                            "carbs_g": "碳水 (g)",
+                            "fat_g": "脂肪 (g)"
+                        })
+                        st.table(df_meal)
+
+                    with st.container(border=True):
+                        st.markdown(f"**🎯 目標達成評估**：{res.get('target_comparison', '')}")
+                        st.markdown(f"**💡 運動營養師建議**：\n\n{res.get('nutrition_advice', '')}")
+
+                    if st.button("💾 儲存今日飲食評估紀錄 Save Meal Log", key="btn_save_meal_eval", use_container_width=True):
+                        save_record(
+                            target_meal_user,
+                            u_meal["team_code"],
+                            "飲食與熱量AI評估 Meal & Calorie AI",
+                            f"{latest_meal['date']} 三餐熱量評估 ({tot_kcal} kcal)",
+                            {
+                                "date": latest_meal["date"],
+                                "weight_kg": wt_val,
+                                "goal": latest_meal["goal"],
+                                "training_load": latest_meal["training_load"],
+                                "raw_inputs": latest_meal["raw_inputs"],
+                                "ai_result": res,
+                                "saved_by": u_meal["username"],
+                                "saved_at": str(datetime.datetime.now())
+                            }
+                        )
+                        st.success("已成功儲存至飲食熱量資料庫！")
+                        st.rerun()
+
+            with tab_meal_hist:
+                meal_recs = get_user_records(
+                    u_meal["team_code"],
+                    username=target_meal_user,
+                    module="飲食與熱量AI評估 Meal & Calorie AI"
+                )
+                if not meal_recs:
+                    st.info("目前尚無已儲存的三餐熱量評估紀錄。")
+                else:
+                    chart_rows = []
+                    for mr in reversed(meal_recs):
+                        try:
+                            md = json.loads(mr[4]) if isinstance(mr[4], str) else mr[4]
+                            ai_r = md.get("ai_result", {})
+                            chart_rows.append({
+                                "日期": md.get("date", mr[5][:10]),
+                                "總熱量 (kcal)": ai_r.get("total_calories", 0),
+                                "蛋白質 (g)": ai_r.get("total_protein_g", 0),
+                                "碳水 (g)": ai_r.get("total_carbs_g", 0)
+                            })
+                        except Exception:
+                            pass
+
+                    if len(chart_rows) >= 2:
+                        df_m_trend = pd.DataFrame(chart_rows).set_index("日期")
+                        st.markdown("##### 📈 每日攝取熱量趨勢 (kcal)")
+                        st.line_chart(df_m_trend[["總熱量 (kcal)"]])
+
+                    for mr in meal_recs:
+                        mr_id, _, _, mr_title, mr_details_str, _ = mr
+                        try:
+                            md = json.loads(mr_details_str) if isinstance(mr_details_str, str) else mr_details_str
+                        except Exception:
+                            md = {}
+                        ai_r = md.get("ai_result", {})
+                        raw_in = md.get("raw_inputs", {})
+                        with st.expander(f"🍱 {mr_title} ｜ 蛋白質 {ai_r.get('total_protein_g', 0)}g / 碳水 {ai_r.get('total_carbs_g', 0)}g / 脂肪 {ai_r.get('total_fat_g', 0)}g"):
+                            st.write(f"**當日體重**：`{md.get('weight_kg', '-')} kg` ｜ **目標**：`{md.get('goal', '-')}` ｜ **訓練負荷**：`{md.get('training_load', '-')}`")
+                            st.write(f"• **早餐**：{raw_in.get('breakfast') or '未填寫'}")
+                            st.write(f"• **午餐**：{raw_in.get('lunch') or '未填寫'}")
+                            st.write(f"• **晚餐**：{raw_in.get('dinner') or '未填寫'}")
+                            st.write(f"• **點心／補給**：{raw_in.get('snack') or '無'}")
+                            st.info(f"**AI 建議**：{ai_r.get('nutrition_advice', '')}")
+                            if meal_role == "coach" or target_meal_user == u_meal["username"]:
+                                if st.button("🗑️ 刪除此飲食紀錄", key=f"del_meal_rec_{mr_id}"):
+                                    delete_record(mr_id)
+                                    st.rerun()
 # ==================== 【頁面 9：歷史分析紀錄】 ====================
 elif page == "歷史分析紀錄 History Records":
     st.title("歷史分析與紀錄管理 History Records")
