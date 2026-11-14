@@ -3965,10 +3965,9 @@ def render_training_log_history():
                                     if edit_inj_key in st.session_state:
                                         del st.session_state[edit_inj_key]
                                     st.rerun()
-
-if is_staff:
+        if is_staff:
             render_training_log_history()
-else:
+        else:
             tab_new_plan, tab_view_plan = st.tabs([
                 "新增與編輯訓練日誌 Add & Edit Training Log",
                 "歷次課表與日誌總覽 Training Log History"
