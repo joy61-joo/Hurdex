@@ -478,7 +478,6 @@ def generate_pre_comp_integrated_report(
     )
     user_prompt = f"請生成本週賽前整合分析週報：\n{json.dumps(integrated_payload, ensure_ascii=False, indent=2)}"
     return _call_gemini(system_instruction, user_prompt, temperature=0.35)
-
 def evaluate_daily_meals(
     meal_date_str: str,
     cur_weight: float,
@@ -494,7 +493,7 @@ def evaluate_daily_meals(
         "你是一位專精於田徑跨欄與爆發力項目的運動營養師。"
         "請根據運動員的三餐與補給內容，客觀估算每餐與全日總熱量（kcal）及三大營養素（蛋白質、碳水化合物、脂肪），"
         "並結合當日訓練負荷與體重目標給予繁體中文營養調整建議。"
-        "請嚴格只輸出合法的 JSON 字串，不要包含任何 Markdown 標記（如 ```json）或多餘說明文字。"
+        "請嚴格只輸出合法的 JSON 物件，不要包含任何多餘說明文字。"
     )
 
     user_prompt = f"""
@@ -526,12 +525,24 @@ def evaluate_daily_meals(
   "nutrition_advice": "給予2至3點具體可執行的下一餐或明日飲食微調建議（繁體中文）"
 }}
 """
-    raw_text = _call_gemini(system_instruction, user_prompt, temperature=0.3)
+    client = _get_gemini_client()
+    response = client.models.generate_content(
+        model=MODEL_ID,
+        contents=user_prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=system_instruction,
+            temperature=0.3,
+            response_mime_type="application/json",
+        ),
+    )
 
-    cleaned = raw_text.strip()
-    if cleaned.startswith("```"):
-        cleaned = cleaned.split("\n", 1)[-1]
-    if cleaned.endswith("```"):
-        cleaned = cleaned.rsplit("```", 1)[0]
+    raw_text = (response.text or "").strip()
+    if not raw_text:
+        raise RuntimeError("AI 模型未回傳任何文字內容，請檢查 API Key 額度或模型設定。")
 
-    return json.loads(cleaned.strip())
+    start_idx = raw_text.find("{")
+    end_idx = raw_text.rfind("}")
+    if start_idx == -1 or end_idx == -1 or end_idx <= start_idx:
+        raise ValueError(f"AI 回傳格式非預期 JSON：{raw_text[:200]}")
+
+    return json.loads(raw_text[start_idx : end_idx + 1])
