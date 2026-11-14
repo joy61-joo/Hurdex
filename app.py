@@ -1019,7 +1019,53 @@ def delete_record_folder(team_code, username, folder_name):
     c.close()
     conn.close()
 
-def get_records_with_folder(team_code, username=None):
+def _parse_record_sharing_meta(rec_username, details_str):
+    try:
+        d = json.loads(details_str) if isinstance(details_str, str) else (details_str or {})
+        if not isinstance(d, dict):
+            d = {}
+    except Exception:
+        d = {}
+    created_by_role = d.get("created_by_role", "player")
+    target_athlete = d.get("target_athlete", "")
+    # 舊紀錄預設為 True，新紀錄依使用者儲存時的勾選狀態決定
+    is_shared = d.get("is_shared", True)
+    return d, created_by_role, target_athlete, bool(is_shared)
+
+def _can_view_analysis_record(rec_username, details_str, viewer_username, viewer_role, filter_athlete=None):
+    # 防護員原則上看不到任何分析的歷史紀錄
+    if viewer_role == "trainer":
+        return False
+
+    _, created_by_role, target_athlete, is_shared = _parse_record_sharing_meta(rec_username, details_str)
+
+    if viewer_role == "player":
+        # 選手可看自己建立的紀錄，或教練指定給該選手且勾選分享的紀錄
+        if rec_username == viewer_username:
+            return True
+        if created_by_role == "coach" and target_athlete == viewer_username and is_shared:
+            return True
+        return False
+
+    if viewer_role == "coach":
+        # 若教練有指定篩選某位選手
+        if filter_athlete:
+            if rec_username == filter_athlete and is_shared:
+                return True
+            if created_by_role == "coach" and target_athlete == filter_athlete:
+                return True
+            return False
+        # 全隊檢視：教練可看教練團建立的紀錄，以及選手勾選分享給教練的紀錄
+        if created_by_role == "coach" or rec_username == viewer_username:
+            return True
+        return is_shared
+
+    return rec_username == viewer_username
+
+def get_records_with_folder(team_code, username=None, viewer_username=None, viewer_role=None):
+    if viewer_role == "trainer":
+        return []
+
     conn = get_db_connection()
     c = conn.cursor()
     query = "SELECT id, username, module, title, details, timestamp, COALESCE(NULLIF(folder_name, ''), '未分類') FROM records"
@@ -1028,7 +1074,7 @@ def get_records_with_folder(team_code, username=None):
     if team_code and str(team_code).strip() and str(team_code) != "None":
         where_clauses.append("(team_code = %s OR username IN (SELECT username FROM users WHERE team_code = %s))")
         params.extend([str(team_code), str(team_code)])
-    if username and str(username).strip() and str(username) != "None":
+    if not viewer_role and username and str(username).strip() and str(username) != "None":
         where_clauses.append("username = %s")
         params.append(str(username))
     if where_clauses:
@@ -1038,9 +1084,21 @@ def get_records_with_folder(team_code, username=None):
     rows = c.fetchall()
     c.close()
     conn.close()
+
+    if viewer_username and viewer_role:
+        filter_ath = username if (viewer_role == "coach" and username) else None
+        rows = [
+            r for r in rows
+            if _can_view_analysis_record(r[1], r[4], viewer_username, viewer_role, filter_athlete=filter_ath)
+        ]
     return rows
 
 def get_user_records(*args, **kwargs):
+    viewer_username = kwargs.get("viewer_username", None)
+    viewer_role = kwargs.get("viewer_role", None)
+    if viewer_role == "trainer":
+        return []
+
     conn = get_db_connection()
     c = conn.cursor()
 
@@ -1058,7 +1116,7 @@ def get_user_records(*args, **kwargs):
     if team_code and str(team_code).strip() and str(team_code) != "None":
         where_clauses.append("(team_code = %s OR username IN (SELECT username FROM users WHERE team_code = %s))")
         params.extend([str(team_code), str(team_code)])
-    if username and str(username).strip() and str(username) != "None":
+    if not viewer_role and username and str(username).strip() and str(username) != "None":
         where_clauses.append("username = %s")
         params.append(str(username))
     if module and str(module).strip() and str(module) != "None":
@@ -1073,6 +1131,13 @@ def get_user_records(*args, **kwargs):
     rows = c.fetchall()
     c.close()
     conn.close()
+
+    if viewer_username and viewer_role:
+        filter_ath = username if (viewer_role == "coach" and username) else None
+        rows = [
+            r for r in rows
+            if _can_view_analysis_record(r[1], r[4], viewer_username, viewer_role, filter_athlete=filter_ath)
+        ]
     return rows
 
 get_records = get_user_records
