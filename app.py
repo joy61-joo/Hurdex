@@ -2924,7 +2924,7 @@ elif page == "角度分析 Angle Analysis":
                             final_metrics = dict(p_data)
                             if edited_angles:
                                 final_metrics["angles"] = edited_angles
-                            save_record(u["username"], u["team_code"], "關鍵影格角度量測 Keyframe Angle Measurement", rec_title_angle, {
+save_record(u["username"], u["team_code"], "關鍵影格角度量測 Keyframe Angle Measurement", rec_title_angle, {
                                 "video_filename": uploaded_file.name,
                                 "image_b64": captured_img,
                                 "angle_metrics": final_metrics,
@@ -2935,6 +2935,16 @@ elif page == "角度分析 Angle Analysis":
                                 "saved_at": str(datetime.datetime.now())
                             }, folder_name=sel_folder_angle)
                             st.success("儲存成功！已連同各關節名稱與分享設定存入資料庫。")
+
+        with tab_hurdle_timer:
+            timer_html_template = """<!DOCTYPE html>
+            <html>
+            <head>
+            <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+            <style>
+                * { box-sizing: border-box; }
+                body { font-family: -apple-system, sans-serif; background: transparent; color: #0f172a; margin: 0; padding: 0; }
+                .control-bar { display: flex; gap: 8px; margin-bottom: 12px; background: #ffffff; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; align-items: center; flex-wrap: wrap; }
             <html>
             <head>
             <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
