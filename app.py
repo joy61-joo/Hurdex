@@ -1484,24 +1484,25 @@ components.html(
         if (!tip) {{
             tip = doc.createElement("div");
             tip.id = "hurdex-nav-tooltip";
-            Object.assign(tip.style, {{
-                position: "fixed",
-                zIndex: "999999",
-                backgroundColor: "#1e293b",
-                color: "#f8fafc",
-                padding: "10px 14px",
-                borderRadius: "8px",
-                fontSize: "13px",
-                lineHeight: "1.6",
-                boxShadow: "0 6px 18px rgba(15, 23, 42, 0.22)",
-                border: "1px solid #334155",
-                pointerEvents: "none",
-                display: "none",
-                maxWidth: "260px",
-                fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
-            }});
             doc.body.appendChild(tip);
         }}
+        Object.assign(tip.style, {{
+            position: "fixed",
+            zIndex: "999999",
+            backgroundColor: "#ffffff",
+            color: "#1e293b",
+            padding: "10px 14px",
+            borderRadius: "8px",
+            fontSize: "13px",
+            lineHeight: "1.6",
+            boxShadow: "0 8px 20px rgba(15, 23, 42, 0.16)",
+            border: "1px solid #cbd5e1",
+            borderLeft: "4px solid #2563eb",
+            pointerEvents: "none",
+            display: "none",
+            maxWidth: "260px",
+            fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+        }});
 
         function bindSidebarTooltips() {{
             const sidebar = doc.querySelector('section[data-testid="stSidebar"]');
@@ -1517,8 +1518,8 @@ components.html(
                 lbl.addEventListener("mouseenter", () => {{
                     const items = hints[matchedKey];
                     tip.innerHTML =
-                        '<div style="font-weight:600;color:#93c5fd;margin-bottom:4px;font-size:12px;">📂 包含功能小頁面</div>' +
-                        items.map((item) => '<div>• ' + item + '</div>').join('');
+                        '<div style="font-weight:700;color:#1d4ed8 !important;margin-bottom:4px;font-size:12px;">📂 包含功能小頁面</div>' +
+                        items.map((item) => '<div style="color:#1e293b !important;font-weight:500;">• ' + item + '</div>').join('');
                     tip.style.display = "block";
                     const rect = lbl.getBoundingClientRect();
                     if (rect.right + 250 < window.parent.innerWidth) {{
