@@ -4725,7 +4725,7 @@ elif page == "課表紀錄 Training Plan":
             const pageStyles = Array.from(document.querySelectorAll('style')).map(st => st.innerHTML).join('\n');
             const injectSvgStyle = (svgStr) => svgStr.replace(
                 /(<svg[^>]*>)/i,
-                '$1<style>path,rect,circle,ellipse,polygon{fill:#f1f5f9;stroke:#64748b;stroke-width:1.5;}\n' + pageStyles + '</style>'
+                '$1<style>path,rect,circle,ellipse,polygon{fill:#f1f5f9;stroke:#64748b;stroke-width:1.5;} ' + pageStyles + '</style>'
             );
 
             const i1 = new Image(); const i2 = new Image();
