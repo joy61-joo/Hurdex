@@ -3584,7 +3584,7 @@ elif page == "課表紀錄 Training Plan":
             "物理治療 / 傷後復健 Rehab & Prehab",
             "測驗與模擬賽 Time Trial / Competition Simulation"
         ]
-def render_training_log_history():
+        def render_training_log_history():
             st.subheader("團隊訓練課表與日誌歷史檔案 Team Training Log Archive" if is_staff else "訓練課表與日誌歷史檔案 Training Log Archive")
             if is_staff:
                 team_athletes = get_team_athletes(user["team_code"])
