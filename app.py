@@ -2885,6 +2885,23 @@ elif page == "角度分析 Angle Analysis":
                         rec_title_angle = st.text_input("紀錄名稱", value=f"動作關鍵影格角度量測 {uploaded_file.name}")
                         sel_folder_angle = st.selectbox("存入資料夾 Folder", angle_folder_opts)
 
+                        target_ath_angle = ""
+                        share_flag_angle = False
+                        if u_curr["role"] == "player":
+                            share_flag_angle = st.checkbox("👁️ 分享此紀錄給教練檢視（不勾選則僅自己可見）", value=True)
+                        elif u_curr["role"] == "coach":
+                            ath_list_ang = get_team_athletes(u_curr["team_code"])
+                            sel_ath_ang = st.selectbox(
+                                "🎯 選擇此影片所屬選手 Select Athlete",
+                                ["（未指定選手 / 教練示範）"] + ath_list_ang
+                            )
+                            target_ath_angle = "" if sel_ath_ang.startswith("（未指定") else sel_ath_ang
+                            share_flag_angle = st.checkbox(
+                                "👁️ 分享給該選手檢視（不勾選則僅教練自己可見）",
+                                value=True,
+                                disabled=(target_ath_angle == "")
+                            )
+
                         edited_angles = []
                         raw_angles = p_data.get("angles", [])
                         if raw_angles:
@@ -2912,11 +2929,12 @@ elif page == "角度分析 Angle Analysis":
                                 "image_b64": captured_img,
                                 "angle_metrics": final_metrics,
                                 "user_notes": rec_note_angle.strip(),
+                                "created_by_role": u["role"],
+                                "target_athlete": target_ath_angle,
+                                "is_shared": bool(share_flag_angle) if (u["role"] == "player" or target_ath_angle) else False,
                                 "saved_at": str(datetime.datetime.now())
                             }, folder_name=sel_folder_angle)
-                            st.success("儲存成功！已連同各關節名稱與標註畫面存入歷史分析紀錄。")
-        with tab_hurdle_timer:
-            timer_html_template = """<!DOCTYPE html>
+                            st.success("儲存成功！已連同各關節名稱與分享設定存入資料庫。")
             <html>
             <head>
             <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -3111,18 +3129,39 @@ elif page == "角度分析 Angle Analysis":
                         with st.container(border=True):
                             st.markdown(st.session_state["ai_timer_single_res"])
 
-                    if st.session_state["user_info"]:
+if st.session_state["user_info"]:
                         u_curr_t = st.session_state["user_info"]
                         timer_folder_opts = ["未分類"] + get_record_folders(u_curr_t["team_code"], username=u_curr_t["username"])
                         with st.form("save_timer_form"):
                             rec_title_timer = st.text_input("紀錄名稱", value=f"欄間秒數及速度計算 {uploaded_file.name}")
                             sel_folder_timer = st.selectbox("存入資料夾 Folder", timer_folder_opts)
+
+                            target_ath_timer = ""
+                            share_flag_timer = False
+                            if u_curr_t["role"] == "player":
+                                share_flag_timer = st.checkbox("👁️ 分享此紀錄給教練檢視（不勾選則僅自己可見）", value=True)
+                            elif u_curr_t["role"] == "coach":
+                                ath_list_tm = get_team_athletes(u_curr_t["team_code"])
+                                sel_ath_tm = st.selectbox(
+                                    "🎯 選擇此影片所屬選手 Select Athlete",
+                                    ["（未指定選手 / 教練示範）"] + ath_list_tm
+                                )
+                                target_ath_timer = "" if sel_ath_tm.startswith("（未指定") else sel_ath_tm
+                                share_flag_timer = st.checkbox(
+                                    "👁️ 分享給該選手檢視（不勾選則僅教練自己可見）",
+                                    value=True,
+                                    disabled=(target_ath_timer == "")
+                                )
+
                             rec_note_timer = st.text_area("欄間節奏分析筆記 (選填)", placeholder="可記錄各欄間步頻變化、後段速度維持情況...", height=80)
                             if st.form_submit_button("儲存至團隊資料庫"):
                                 u = st.session_state["user_info"]
                                 save_record(u["username"], u["team_code"], "欄間秒數及速度計算 Hurdle Time & Speed Calculation", rec_title_timer, {
                                     "timer_metrics": tm_data,
                                     "user_notes": rec_note_timer.strip(),
+                                    "created_by_role": u["role"],
+                                    "target_athlete": target_ath_timer,
+                                    "is_shared": bool(share_flag_timer) if (u["role"] == "player" or target_ath_timer) else False,
                                     "saved_at": str(datetime.datetime.now())
                                 }, folder_name=sel_folder_timer)
                                 st.success("儲存成功！")
