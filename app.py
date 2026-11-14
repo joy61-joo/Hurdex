@@ -2849,7 +2849,8 @@ elif page == "角度分析 Angle Analysis":
                                 "user_notes": rec_note_angle.strip(),
                                 "saved_at": str(datetime.datetime.now())
                             }, folder_name=sel_folder_angle)
-                            st.success("儲存成功！已連同各關節名稱與標註畫面存入歷史分析紀錄。")
+st.success("儲存成功！已連同各關節名稱與標註畫面存入歷史分析紀錄。")
+
         with tab_hurdle_timer:
             timer_html_template = """<!DOCTYPE html>
             <html>
