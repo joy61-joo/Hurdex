@@ -478,3 +478,107 @@ def generate_pre_comp_integrated_report(
     )
     user_prompt = f"請生成本週賽前整合分析週報：\n{json.dumps(integrated_payload, ensure_ascii=False, indent=2)}"
     return _call_gemini(system_instruction, user_prompt, temperature=0.35)
+
+def _run_meal_ai_assessment(meal_date_str, cur_weight, goal_mode, training_load, b_txt, l_txt, d_txt, s_txt):
+            import os
+
+            prompt = f"""
+你是一位專精於田徑跨欄與爆發力項目的運動營養師。請根據以下運動員今日的三餐與補給內容，估算每餐與全日總熱量及三大營養素（蛋白質、碳水化合物、脂肪），並提供具體實用的運動營養調整建議。
+
+【運動員基本狀態】
+- 日期：{meal_date_str}
+- 目前體重：{cur_weight} kg
+- 體重管理目標：{goal_mode}
+- 今日訓練負荷：{training_load}
+
+【今日飲食內容】
+- 早餐：{b_txt if b_txt.strip() else "未進食 / 未填寫"}
+- 午餐：{l_txt if l_txt.strip() else "未進食 / 未填寫"}
+- 晚餐：{d_txt if d_txt.strip() else "未進食 / 未填寫"}
+- 點心 / 訓練前後補給：{s_txt if s_txt.strip() else "無"}
+
+請嚴格只回傳合法的 JSON 格式（不要包含 ```json 標記或多餘文字），結構如下：
+{{
+  "total_calories": 2250,
+  "total_protein_g": 135,
+  "total_carbs_g": 280,
+  "total_fat_g": 62,
+  "meals_breakdown": [
+    {{"meal": "早餐", "items_summary": "簡述食物", "calories": 550, "protein_g": 30, "carbs_g": 65, "fat_g": 18}},
+    {{"meal": "午餐", "items_summary": "簡述食物", "calories": 750, "protein_g": 45, "carbs_g": 95, "fat_g": 20}},
+    {{"meal": "晚餐", "items_summary": "簡述食物", "calories": 700, "protein_g": 40, "carbs_g": 85, "fat_g": 18}},
+    {{"meal": "點心/補給", "items_summary": "簡述食物", "calories": 250, "protein_g": 20, "carbs_g": 35, "fat_g": 6}}
+  ],
+  "target_comparison": "說明今日熱量與蛋白質（每公斤體重攝取量）是否符合該訓練負荷與體重目標",
+  "nutrition_advice": "給予2至3點具體可執行的下一餐或明日飲食微調建議（繁體中文）"
+}}
+"""
+            # 自動搜尋環境變數、Streamlit Secrets 與全域變數中的 Gemini API Key
+            api_key = ""
+            for k in ["GEMINI_API_KEY", "GOOGLE_API_KEY", "API_KEY", "gemini_api_key", "google_api_key"]:
+                if os.environ.get(k):
+                    api_key = os.environ.get(k)
+                    break
+
+            if not api_key:
+                try:
+                    for k, v in st.secrets.items():
+                        if isinstance(v, str) and any(tag in k.upper() for tag in ["GEMINI", "GOOGLE", "API_KEY"]):
+                            api_key = v
+                            break
+                        elif isinstance(v, dict):
+                            for sub_k, sub_v in v.items():
+                                if isinstance(sub_v, str) and any(tag in sub_k.upper() for tag in ["GEMINI", "GOOGLE", "API_KEY"]):
+                                    api_key = sub_v
+                                    break
+                except Exception:
+                    pass
+
+            if not api_key:
+                for g_k in ["GEMINI_API_KEY", "GOOGLE_API_KEY", "API_KEY"]:
+                    if isinstance(globals().get(g_k), str) and globals().get(g_k):
+                        api_key = globals().get(g_k)
+                        break
+
+            raw_text = ""
+            g_client = globals().get("client")
+            g_model = globals().get("model")
+
+            # 1. 優先沿用 app.py 頂端已建立的全域 client 或 model
+            if g_client is not None and hasattr(g_client, "models"):
+                resp = g_client.models.generate_content(model="gemini-3.8-flash", contents=prompt)
+                raw_text = resp.text or ""
+            elif g_model is not None and hasattr(g_model, "generate_content"):
+                resp = g_model.generate_content(prompt)
+                raw_text = resp.text or ""
+            elif api_key:
+                try:
+                    from google import genai
+                    client_inst = genai.Client(api_key=api_key)
+                    resp = client_inst.models.generate_content(
+                        model="gemini-3.8-flash",
+                        contents=prompt
+                    )
+                    raw_text = resp.text or ""
+                except ImportError:
+                    import google.generativeai as genai_legacy
+                    genai_legacy.configure(api_key=api_key)
+                    model_inst = genai_legacy.GenerativeModel("gemini-3.8-flash")
+                    resp = model_inst.generate_content(prompt)
+                    raw_text = resp.text or ""
+            else:
+                # 2. 嘗試沿用全域已 configure 的套件狀態
+                try:
+                    import google.generativeai as genai_legacy
+                    model_inst = genai_legacy.GenerativeModel("gemini-3.8-flash")
+                    resp = model_inst.generate_content(prompt)
+                    raw_text = resp.text or ""
+                except Exception:
+                    raise RuntimeError("找不到 API Key，請至 Streamlit Cloud 後台的 Settings → Secrets 確認已設定 GEMINI_API_KEY 或 GOOGLE_API_KEY。")
+
+            cleaned = raw_text.strip()
+            if cleaned.startswith("```"):
+                cleaned = cleaned.split("\n", 1)[-1]
+            if cleaned.endswith("```"):
+                cleaned = cleaned.rsplit("```", 1)[0]
+            return json.loads(cleaned.strip())
