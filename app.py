@@ -2300,8 +2300,7 @@ elif page == "角度分析 Angle Analysis":
 
         with tab_play:
             st.video(bytes_single)
-
-        with tab_measure:
+with tab_measure:
             measure_html_template = """<!DOCTYPE html>
             <html>
             <head>
@@ -2322,10 +2321,14 @@ elif page == "角度分析 Angle Analysis":
                 canvas { position: absolute; top: 0; left: 0; cursor: crosshair; }
                 .slider-box { width: 100%; margin-top: 10px; background: #f8fafc; padding: 8px 12px; border-radius: 8px; border: 1px solid #e2e8f0; }
                 input[type=range] { width: 100%; height: 6px; border-radius: 3px; background: #cbd5e1; outline: none; cursor: pointer; }
-                .data-box { flex: 0.8; background: #ffffff; border-radius: 10px; border: 1px solid #e2e8f0; padding: 16px; display: flex; flex-direction: column; max-height: 520px; overflow-y: auto; }
-                .metric-card { background: #f8fafc; padding: 12px 16px; border-radius: 8px; margin-bottom: 12px; border: 1px solid #e2e8f0; border-left: 4px solid #2563eb; }
-                .metric-title { font-size: 12px; color: #64748b; margin-bottom: 4px; }
-                .metric-val { font-size: 22px; font-weight: bold; color: #2563eb; }
+                .data-box { flex: 0.85; background: #ffffff; border-radius: 10px; border: 1px solid #e2e8f0; padding: 16px; display: flex; flex-direction: column; max-height: 540px; overflow-y: auto; }
+                .metric-card { background: #f8fafc; padding: 10px 14px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #e2e8f0; border-left: 5px solid #2563eb; }
+                .metric-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+                .metric-badge { font-size: 12px; font-weight: bold; color: #334155; }
+                .metric-val { font-size: 20px; font-weight: bold; color: #2563eb; }
+                .name-row { display: flex; flex-direction: column; gap: 5px; margin-top: 4px; }
+                .name-input { width: 100%; padding: 5px 8px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 13px; color: #0f172a; background: #ffffff; }
+                .preset-select { width: 100%; padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px; color: #475569; background: #ffffff; }
                 select { background: #ffffff; color: #0f172a; border: 1px solid #cbd5e1; padding: 5px 8px; border-radius: 6px; font-weight: bold; }
             </style>
             </head>
@@ -2378,7 +2381,8 @@ elif page == "角度分析 Angle Analysis":
                         </div>
                     </div>
                     <div class="data-box">
-                        <h4 style="margin: 0 0 12px 0; color:#2563eb;">當前影格角度數據 Angle Metrics</h4>
+                        <h4 style="margin: 0 0 6px 0; color:#2563eb;">當前影格角度數據 Angle Metrics</h4>
+                        <div style="font-size:12px; color:#64748b; margin-bottom:10px;">點擊影片標記關節後，可為每個編號指定對應部位名稱：</div>
                         <div id="metricsContainer"></div>
                     </div>
                 </div>
@@ -2404,7 +2408,18 @@ elif page == "角度分析 Angle Analysis":
                     const btnSnapAngle = document.getElementById('btnSnapAngle');
                     const metricsContainer = document.getElementById('metricsContainer');
 
-                    let mode = '3p', pts2p = [], pts3pGroups = [], buf3p = [], currentAngleList = [], t0 = 0.0;
+                    let mode = '3p', pts2p = [], name2p = "軀幹前傾角 (Trunk Lean)";
+                    let pts3pGroups = [], groupNames = [], buf3p = [], currentAngleList = [], t0 = 0.0;
+
+                    const PRESET_ANGLES = [
+                        "前導腳膝關節角 (Lead Knee)",
+                        "後蹬腿膝關節角 (Trail Knee)",
+                        "髖關節伸展角 (Hip Angle)",
+                        "踝關節背屈角 (Ankle Angle)",
+                        "攻欄大腿抬升角 (Lead Thigh)",
+                        "起跑蹬伸膝角 (Block Knee)",
+                        "擺臂肘關節角 (Elbow Angle)"
+                    ];
 
                     function syncToStreamlit(el, val) {
                         if (!el) return;
@@ -2413,9 +2428,14 @@ elif page == "角度分析 Angle Analysis":
                             const nativeSetter = pWin.Object.getOwnPropertyDescriptor(pWin.HTMLTextAreaElement.prototype, "value").set;
                             nativeSetter.call(el, val);
                             if (el._valueTracker) el._valueTracker.setValue('');
-                            el.focus(); el.dispatchEvent(new pWin.Event('input', { bubbles: true }));
-                            el.dispatchEvent(new pWin.Event('change', { bubbles: true })); el.blur();
-                        } catch(err) { el.value = val; el.dispatchEvent(new Event('input', { bubbles: true })); }
+                            el.focus({ preventScroll: true });
+                            el.dispatchEvent(new pWin.Event('input', { bubbles: true }));
+                            el.dispatchEvent(new pWin.Event('change', { bubbles: true }));
+                            el.blur();
+                        } catch(err) {
+                            el.value = val;
+                            el.dispatchEvent(new Event('input', { bubbles: true }));
+                        }
                     }
 
                     function b64ToBlob(b64Data, contentType) {
@@ -2433,8 +2453,11 @@ elif page == "角度分析 Angle Analysis":
                     try { vidMeas.src = URL.createObjectURL(b64ToBlob("___B64_SINGLE___", "___MIME_SINGLE___")); } catch(e){}
 
                     function syncCanvasSize() {
-                        if (vidMeas.clientWidth > 0 && vidMeas.clientHeight > 0) { canvas.width = vidMeas.clientWidth; canvas.height = vidMeas.clientHeight; }
-                        redraw();
+                        if (vidMeas.clientWidth > 0 && vidMeas.clientHeight > 0) {
+                            canvas.width = vidMeas.clientWidth;
+                            canvas.height = vidMeas.clientHeight;
+                        }
+                        redrawAll();
                     }
                     vidMeas.addEventListener('loadedmetadata', () => { sliderMeas.max = vidMeas.duration; syncCanvasSize(); });
                     vidMeas.addEventListener('canplay', syncCanvasSize);
@@ -2450,10 +2473,10 @@ elif page == "角度分析 Angle Analysis":
                     vidMeas.addEventListener('timeupdate', () => {
                         updateTimeDisplays();
                         if (!vidMeas.paused) sliderMeas.value = vidMeas.currentTime;
-                        redraw();
+                        drawCanvasOnly();
                     });
 
-                    sliderMeas.addEventListener('input', (e) => { vidMeas.currentTime = parseFloat(e.target.value); updateTimeDisplays(); redraw(); });
+                    sliderMeas.addEventListener('input', (e) => { vidMeas.currentTime = parseFloat(e.target.value); updateTimeDisplays(); drawCanvasOnly(); });
                     btnSetT0.addEventListener('click', () => { t0 = vidMeas.currentTime; btnSetT0.innerText = `起點 T0: ${t0.toFixed(2)}s`; updateTimeDisplays(); });
                     btnPlayMeas.addEventListener('click', () => { if (vidMeas.paused) vidMeas.play(); else vidMeas.pause(); });
 
@@ -2463,33 +2486,43 @@ elif page == "角度分析 Angle Analysis":
                     btnStepBack.addEventListener('click', () => {
                         vidMeas.pause();
                         vidMeas.currentTime = Math.max(0, vidMeas.currentTime - (BASE_FRAME_TIME * (parseInt(selFrameInterval.value)||1)));
-                        sliderMeas.value = vidMeas.currentTime; updateTimeDisplays(); redraw();
+                        sliderMeas.value = vidMeas.currentTime; updateTimeDisplays(); drawCanvasOnly();
                     });
                     btnStepForward.addEventListener('click', () => {
                         vidMeas.pause();
                         vidMeas.currentTime = Math.min(vidMeas.duration, vidMeas.currentTime + (BASE_FRAME_TIME * (parseInt(selFrameInterval.value)||1)));
-                        sliderMeas.value = vidMeas.currentTime; updateTimeDisplays(); redraw();
+                        sliderMeas.value = vidMeas.currentTime; updateTimeDisplays(); drawCanvasOnly();
                     });
 
-                    btnMode3p.addEventListener('click', () => { mode = '3p'; btnMode3p.classList.add('active'); btnMode2p.classList.remove('active'); redraw(); });
-                    btnMode2p.addEventListener('click', () => { mode = '2p'; btnMode2p.classList.add('active'); btnMode3p.classList.remove('active'); redraw(); });
+                    btnMode3p.addEventListener('click', () => { mode = '3p'; btnMode3p.classList.add('active'); btnMode2p.classList.remove('active'); redrawAll(); });
+                    btnMode2p.addEventListener('click', () => { mode = '2p'; btnMode2p.classList.add('active'); btnMode3p.classList.remove('active'); redrawAll(); });
 
                     canvas.addEventListener('click', (e) => {
                         const rect = canvas.getBoundingClientRect();
                         const x = e.clientX - rect.left, y = e.clientY - rect.top;
                         if (mode === '3p') {
                             buf3p.push({x, y});
-                            if (buf3p.length === 3) { pts3pGroups.push([...buf3p]); buf3p = []; }
-                        } else { if (pts2p.length < 2) pts2p.push({x, y}); }
-                        redraw();
+                            if (buf3p.length === 3) {
+                                pts3pGroups.push([...buf3p]);
+                                groupNames.push(`關節角度 #${pts3pGroups.length}`);
+                                buf3p = [];
+                            }
+                        } else {
+                            if (pts2p.length < 2) pts2p.push({x, y});
+                        }
+                        redrawAll();
                     });
 
                     btnUndo.addEventListener('click', () => {
-                        if (mode === '3p') { if (buf3p.length > 0) buf3p.pop(); else if (pts3pGroups.length > 0) pts3pGroups.pop(); }
-                        else { if (pts2p.length > 0) pts2p.pop(); }
-                        redraw();
+                        if (mode === '3p') {
+                            if (buf3p.length > 0) buf3p.pop();
+                            else if (pts3pGroups.length > 0) { pts3pGroups.pop(); groupNames.pop(); }
+                        } else {
+                            if (pts2p.length > 0) pts2p.pop();
+                        }
+                        redrawAll();
                     });
-                    btnClear.addEventListener('click', () => { pts2p = []; pts3pGroups = []; buf3p = []; redraw(); });
+                    btnClear.addEventListener('click', () => { pts2p = []; pts3pGroups = []; groupNames = []; buf3p = []; redrawAll(); });
 
                     function calc2ptAngle(p1, p2) {
                         let dx = p1.x - p2.x, dy = p1.y - p2.y;
@@ -2504,35 +2537,217 @@ elif page == "角度分析 Angle Analysis":
                     }
 
                     const colors3p = ['#d97706', '#2563eb', '#059669', '#7c3aed', '#dc2626'];
+                    const colorNames3p = ['橘黃', '藍色', '綠色', '紫色', '紅色'];
 
-                    function redraw() {
+                    function drawJointDots(pts, color) {
+                        pts.forEach(p => {
+                            ctx.beginPath();
+                            ctx.arc(p.x, p.y, 4.5, 0, Math.PI * 2);
+                            ctx.fillStyle = color;
+                            ctx.fill();
+                            ctx.lineWidth = 1.5;
+                            ctx.strokeStyle = '#ffffff';
+                            ctx.stroke();
+                        });
+                    }
+
+                    function drawLabelTag(x, y, text, color) {
+                        ctx.font = 'bold 12px -apple-system, sans-serif';
+                        const padX = 7, boxH = 22;
+                        const textW = ctx.measureText(text).width;
+                        const boxW = textW + padX * 2 + 4;
+                        let bx = x + 10;
+                        let by = y - 11;
+                        if (bx + boxW > canvas.width - 4) bx = Math.max(4, x - boxW - 10);
+                        if (by < 4) by = 4;
+                        if (by + boxH > canvas.height - 4) by = canvas.height - boxH - 4;
+
+                        ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+                        ctx.beginPath();
+                        ctx.roundRect(bx, by, boxW, boxH, 5);
+                        ctx.fill();
+
+                        ctx.fillStyle = color;
+                        ctx.fillRect(bx, by + 3, 4, boxH - 6);
+
+                        ctx.fillStyle = '#ffffff';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText(text, bx + padX + 2, by + boxH / 2);
+                    }
+
+                    function drawCanvasOnly() {
                         ctx.clearRect(0, 0, canvas.width, canvas.height);
-                        metricsContainer.innerHTML = ''; currentAngleList = [];
+                        currentAngleList = [];
 
-                        if (pts2p.length === 2) {
-                            ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 2;
+                        if (pts2p.length === 1) {
+                            drawJointDots(pts2p, '#2563eb');
+                        } else if (pts2p.length === 2) {
+                            ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 2.5;
                             ctx.beginPath(); ctx.moveTo(pts2p[0].x, pts2p[0].y); ctx.lineTo(pts2p[1].x, pts2p[1].y); ctx.stroke();
+                            drawJointDots(pts2p, '#2563eb');
                             const leanAng = calc2ptAngle(pts2p[0], pts2p[1]);
-                            currentAngleList.push({ name: "軀幹前傾角 Trunk Lean Angle", value: `${leanAng.toFixed(1)}°` });
-                            metricsContainer.innerHTML += `<div class="metric-card"><div class="metric-title">軀幹前傾角 Trunk Lean Angle</div><div class="metric-val">${leanAng.toFixed(1)}°</div></div>`;
+                            const midX = (pts2p[0].x + pts2p[1].x) / 2;
+                            const midY = (pts2p[0].y + pts2p[1].y) / 2;
+                            drawLabelTag(midX, midY, `${name2p}: ${leanAng.toFixed(1)}°`, '#2563eb');
+                            currentAngleList.push({
+                                id: 0,
+                                color: '#2563eb',
+                                color_name: '藍色',
+                                name: name2p,
+                                value: `${leanAng.toFixed(1)}°`
+                            });
                         }
 
                         pts3pGroups.forEach((group, idx) => {
                             const color = colors3p[idx % colors3p.length];
+                            const cName = colorNames3p[idx % colorNames3p.length];
+                            const labelName = groupNames[idx] || `關節角度 #${idx + 1}`;
                             const ang = calc3ptAngle(group[0], group[1], group[2]);
-                            ctx.strokeStyle = color; ctx.lineWidth = 2;
-                            ctx.beginPath(); ctx.moveTo(group[0].x, group[0].y); ctx.lineTo(group[1].x, group[1].y); ctx.lineTo(group[2].x, group[2].y); ctx.stroke();
-                            currentAngleList.push({ name: `關節角度 Joint Angle #${idx+1}`, value: `${ang.toFixed(1)}°` });
-                            metricsContainer.innerHTML += `<div class="metric-card" style="border-left-color: ${color};"><div class="metric-title">關節角度 Joint Angle #${idx+1}</div><div class="metric-val" style="color:${color};">${ang.toFixed(1)}°</div></div>`;
+
+                            ctx.strokeStyle = color; ctx.lineWidth = 2.5;
+                            ctx.beginPath();
+                            ctx.moveTo(group[0].x, group[0].y);
+                            ctx.lineTo(group[1].x, group[1].y);
+                            ctx.lineTo(group[2].x, group[2].y);
+                            ctx.stroke();
+
+                            // 在關節頂點畫角度弧線
+                            const ang1 = Math.atan2(group[0].y - group[1].y, group[0].x - group[1].x);
+                            const ang2 = Math.atan2(group[2].y - group[1].y, group[2].x - group[1].x);
+                            let diff = ang2 - ang1;
+                            while (diff <= -Math.PI) diff += Math.PI * 2;
+                            while (diff > Math.PI) diff -= Math.PI * 2;
+                            ctx.beginPath();
+                            ctx.arc(group[1].x, group[1].y, 18, ang1, ang1 + diff, diff < 0);
+                            ctx.stroke();
+
+                            drawJointDots(group, color);
+                            drawLabelTag(group[1].x, group[1].y, `#${idx + 1} ${labelName}: ${ang.toFixed(1)}°`, color);
+
+                            currentAngleList.push({
+                                id: idx + 1,
+                                color: color,
+                                color_name: cName,
+                                name: labelName,
+                                value: `${ang.toFixed(1)}°`
+                            });
                         });
+
+                        if (buf3p.length > 0) {
+                            const nextColor = colors3p[pts3pGroups.length % colors3p.length];
+                            if (buf3p.length === 2) {
+                                ctx.strokeStyle = nextColor; ctx.lineWidth = 2;
+                                ctx.beginPath(); ctx.moveTo(buf3p[0].x, buf3p[0].y); ctx.lineTo(buf3p[1].x, buf3p[1].y); ctx.stroke();
+                            }
+                            drawJointDots(buf3p, nextColor);
+                        }
+                    }
+
+                    function renderMetricsPanel() {
+                        metricsContainer.innerHTML = '';
+                        if (pts2p.length === 2) {
+                            const leanAng = calc2ptAngle(pts2p[0], pts2p[1]);
+                            const card = document.createElement('div');
+                            card.className = 'metric-card';
+                            card.style.borderLeftColor = '#2563eb';
+                            card.innerHTML = `
+                                <div class="metric-header">
+                                    <span class="metric-badge">🔵 兩點傾角 (藍線)</span>
+                                    <span class="metric-val" style="color:#2563eb;">${leanAng.toFixed(1)}°</span>
+                                </div>
+                                <div class="name-row">
+                                    <input type="text" class="name-input" value="${name2p}" placeholder="輸入角度名稱...">
+                                </div>
+                            `;
+                            card.querySelector('input').addEventListener('input', (e) => {
+                                name2p = e.target.value || "軀幹前傾角 (Trunk Lean)";
+                                drawCanvasOnly();
+                            });
+                            metricsContainer.appendChild(card);
+                        }
+
+                        pts3pGroups.forEach((group, idx) => {
+                            const color = colors3p[idx % colors3p.length];
+                            const cName = colorNames3p[idx % colorNames3p.length];
+                            const ang = calc3ptAngle(group[0], group[1], group[2]);
+                            const curName = groupNames[idx] || `關節角度 #${idx + 1}`;
+
+                            const card = document.createElement('div');
+                            card.className = 'metric-card';
+                            card.style.borderLeftColor = color;
+
+                            const presetOptsHtml = PRESET_ANGLES.map(opt => `<option value="${opt}">${opt}</option>`).join('');
+                            card.innerHTML = `
+                                <div class="metric-header">
+                                    <span class="metric-badge" style="color:${color};">● #${idx + 1} (${cName}線)</span>
+                                    <span class="metric-val" style="color:${color};">${ang.toFixed(1)}°</span>
+                                </div>
+                                <div class="name-row">
+                                    <select class="preset-select">
+                                        <option value="">▾ 快速選擇部位名稱...</option>
+                                        ${presetOptsHtml}
+                                    </select>
+                                    <input type="text" class="name-input" value="${curName}" placeholder="輸入自訂角度名稱...">
+                                </div>
+                            `;
+                            const selEl = card.querySelector('select');
+                            const inpEl = card.querySelector('input');
+                            selEl.addEventListener('change', (e) => {
+                                if (e.target.value) {
+                                    groupNames[idx] = e.target.value;
+                                    inpEl.value = e.target.value;
+                                    drawCanvasOnly();
+                                }
+                            });
+                            inpEl.addEventListener('input', (e) => {
+                                groupNames[idx] = e.target.value || `關節角度 #${idx + 1}`;
+                                drawCanvasOnly();
+                            });
+                            metricsContainer.appendChild(card);
+                        });
+
+                        if (pts2p.length < 2 && pts3pGroups.length === 0) {
+                            metricsContainer.innerHTML = '<div style="font-size:13px; color:#94a3b8; padding:12px 0;">尚未量測角度，請在左側影片上點擊 3 個關節點。</div>';
+                        }
+                    }
+
+                    function redrawAll() {
+                        drawCanvasOnly();
+                        renderMetricsPanel();
+                    }
+
+                    function getVideoDrawRect() {
+                        const cw = canvas.width, ch = canvas.height;
+                        const vw = vidMeas.videoWidth || cw, vh = vidMeas.videoHeight || ch;
+                        const vAspect = vw / vh;
+                        const cAspect = cw / ch;
+                        let drawW = cw, drawH = ch, offsetX = 0, offsetY = 0;
+                        if (vAspect > cAspect) {
+                            drawH = cw / vAspect;
+                            offsetY = (ch - drawH) / 2;
+                        } else {
+                            drawW = ch * vAspect;
+                            offsetX = (cw - drawW) / 2;
+                        }
+                        return { offsetX, offsetY, drawW, drawH, vw, vh };
                     }
 
                     btnSnapAngle.addEventListener('click', () => {
+                        if (!vidMeas.videoWidth || !vidMeas.videoHeight) {
+                            alert("影片尚未載入完成，請稍候再擷取！");
+                            return;
+                        }
+                        drawCanvasOnly();
+                        const r = getVideoDrawRect();
+                        const maxW = 960;
+                        const scale = r.vw > maxW ? (maxW / r.vw) : 1;
+
                         const off = document.createElement('canvas');
-                        off.width = vidMeas.videoWidth; off.height = vidMeas.videoHeight;
+                        off.width = Math.round(r.vw * scale);
+                        off.height = Math.round(r.vh * scale);
                         const offCtx = off.getContext('2d');
                         offCtx.drawImage(vidMeas, 0, 0, off.width, off.height);
-                        offCtx.drawImage(canvas, 0, 0, off.width, off.height);
+                        offCtx.drawImage(canvas, r.offsetX, r.offsetY, r.drawW, r.drawH, 0, 0, off.width, off.height);
 
                         const textAreas = window.parent.document.querySelectorAll('textarea');
                         let targetImgTA = null, targetAngleTA = null;
@@ -2544,17 +2759,26 @@ elif page == "角度分析 Angle Analysis":
 
                         const absT = vidMeas.currentTime || 0;
                         const relT = Math.max(0, absT - t0);
+                        const imgDataUrl = off.toDataURL('image/jpeg', 0.85);
+                        const jsonPayload = JSON.stringify({
+                            time_sec: absT.toFixed(2),
+                            rel_time_sec: relT.toFixed(2),
+                            t0_sec: t0.toFixed(2),
+                            phase_tag: selPhaseTag.value,
+                            angles: currentAngleList
+                        });
 
                         if (targetImgTA && targetAngleTA) {
-                            syncToStreamlit(targetImgTA, off.toDataURL('image/jpeg', 0.85));
-                            syncToStreamlit(targetAngleTA, JSON.stringify({
-                                time_sec: absT.toFixed(2), rel_time_sec: relT.toFixed(2), t0_sec: t0.toFixed(2),
-                                phase_tag: selPhaseTag.value, angles: currentAngleList
-                            }));
-                            alert(`已記錄角度數據！相對時間: ${relT.toFixed(2)}s`);
+                            syncToStreamlit(targetAngleTA, jsonPayload);
+                            setTimeout(() => {
+                                syncToStreamlit(targetImgTA, imgDataUrl);
+                                alert(`已記錄角度數據與畫面！相對時間: ${relT.toFixed(2)}s`);
+                            }, 120);
+                        } else {
+                            alert("找不到同步欄位，請重新整理頁面後再試。");
                         }
                     });
-                    redraw();
+                    redrawAll();
                 </script>
             </body>
             </html>"""
@@ -2566,17 +2790,28 @@ elif page == "角度分析 Angle Analysis":
             captured_img = st.text_area("angle_img_b64", key="captured_angle_img", label_visibility="collapsed")
             captured_json = st.text_area("angle_data_json", key="captured_angle_json", label_visibility="collapsed")
 
-            if captured_img and captured_json:
-                st.success("已成功擷取影格與角度數據")
-                col_prev1, col_prev2 = st.columns([1.2, 0.8])
-                with col_prev1: st.image(captured_img, caption="角度量測合成圖", use_container_width=True)
-                with col_prev2:
+            if captured_img:
+                st.success("✅ 已成功擷取影格與角度數據")
+                p_data = {}
+                if captured_json:
                     try:
                         p_data = json.loads(captured_json)
-                        st.write(f"時間：`{p_data.get('rel_time_sec', '0.00')} 秒`")
-                        st.write(f"階段：`{p_data.get('phase_tag')}`")
-                        for item in p_data.get("angles", []): st.write(f"• **{item['name']}**：`{item['value']}`")
-                    except Exception: pass
+                    except Exception:
+                        p_data = {}
+
+                col_prev1, col_prev2 = st.columns([1.2, 0.8])
+                with col_prev1:
+                    st.image(captured_img, caption="角度量測合成圖（含編號與部位標記）", use_container_width=True)
+                with col_prev2:
+                    st.write(f"**相對時間**：`{p_data.get('rel_time_sec', '0.00')} 秒`")
+                    st.write(f"**關鍵動作階段**：`{p_data.get('phase_tag', '-')}`")
+                    raw_angles = p_data.get("angles", [])
+                    if raw_angles:
+                        st.markdown("**量測角度明細：**")
+                        for item in raw_angles:
+                            c_tag = f"({item['color_name']}線) " if item.get("color_name") else ""
+                            id_tag = f"#{item['id']} " if item.get("id") else ""
+                            st.write(f"• **{id_tag}{c_tag}{item['name']}**：`{item['value']}`")
 
                 if st.session_state["user_info"]:
                     u_curr = st.session_state["user_info"]
@@ -2584,17 +2819,37 @@ elif page == "角度分析 Angle Analysis":
                     with st.form("save_angle_form"):
                         rec_title_angle = st.text_input("紀錄名稱", value=f"動作關鍵影格角度量測 {uploaded_file.name}")
                         sel_folder_angle = st.selectbox("存入資料夾 Folder", angle_folder_opts)
+
+                        edited_angles = []
+                        raw_angles = p_data.get("angles", [])
+                        if raw_angles:
+                            st.markdown("##### 🏷️ 確認或修改各角度對應名稱（將同步顯示於歷史分析資料庫）")
+                            for a_idx, item in enumerate(raw_angles):
+                                c_tag = f"[{item['color_name']}線] " if item.get("color_name") else ""
+                                id_tag = f"#{item['id']} " if item.get("id") else ""
+                                new_a_name = st.text_input(
+                                    f"{id_tag}{c_tag}量測值 {item['value']} 對應名稱：",
+                                    value=item.get("name", f"關節角度 #{a_idx+1}"),
+                                    key=f"confirm_ang_name_{a_idx}"
+                                )
+                                updated_item = dict(item)
+                                updated_item["name"] = new_a_name.strip() or item.get("name", f"關節角度 #{a_idx+1}")
+                                edited_angles.append(updated_item)
+
                         rec_note_angle = st.text_area("動作分析筆記 (選填)", placeholder="可記錄起跳角度觀察、身體重心調整重點...", height=80)
-                        if st.form_submit_button("儲存至團隊資料庫"):
+                        if st.form_submit_button("💾 儲存至團隊資料庫", use_container_width=True):
                             u = st.session_state["user_info"]
+                            final_metrics = dict(p_data)
+                            if edited_angles:
+                                final_metrics["angles"] = edited_angles
                             save_record(u["username"], u["team_code"], "關鍵影格角度量測 Keyframe Angle Measurement", rec_title_angle, {
                                 "video_filename": uploaded_file.name,
                                 "image_b64": captured_img,
-                                "angle_metrics": json.loads(captured_json),
+                                "angle_metrics": final_metrics,
                                 "user_notes": rec_note_angle.strip(),
                                 "saved_at": str(datetime.datetime.now())
                             }, folder_name=sel_folder_angle)
-                            st.success("儲存成功！")
+                            st.success("儲存成功！已連同各關節名稱與標註畫面存入歷史分析紀錄。")
 
         with tab_hurdle_timer:
             timer_html_template = """<!DOCTYPE html>
@@ -4683,7 +4938,7 @@ elif page == "歷史分析紀錄 History Records":
                     elif "角度量測" in mod:
                         col1, col2 = st.columns([1.2, 0.8])
                         with col1:
-                            if "image_b64" in details:
+                            if "image_b64" in details and details["image_b64"]:
                                 st.image(details["image_b64"], caption=title, use_container_width=True)
                         with col2:
                             am = details.get("angle_metrics", {})
@@ -4691,8 +4946,11 @@ elif page == "歷史分析紀錄 History Records":
                             st.write(f"**關鍵動作階段**：`{am.get('phase_tag', '-')}`")
                             angles = am.get("angles", []) if isinstance(am, dict) else am
                             if isinstance(angles, list):
+                                st.markdown("**量測關節角度明細：**")
                                 for a in angles:
-                                    st.write(f"• **{a['name']}**：`{a['value']}`")
+                                    id_prefix = f"#{a['id']} " if a.get("id") else ""
+                                    color_tag = f"（{a['color_name']}線）" if a.get("color_name") else ""
+                                    st.write(f"• **{id_prefix}{a['name']}**{color_tag}：`{a['value']}`")
 
                     elif "欄間秒數" in mod:
                         tm = details.get("timer_metrics", {})
