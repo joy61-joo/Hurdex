@@ -3175,7 +3175,7 @@ elif page == "角度分析 Angle Analysis":
                                     "saved_at": str(datetime.datetime.now())
                                 }, folder_name=sel_folder_timer)
                                 st.success("儲存成功！")
-                    except Exception: pass
+                except Exception: pass
 
 # ==================== 【頁面 5：雙影同步 Dual Video Sync】 ====================
 elif page == "雙影同步 Dual Video Sync":
