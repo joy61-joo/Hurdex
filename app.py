@@ -320,7 +320,7 @@ def evaluate_measurement_progress(goal_row, logs_rows):
     }
 
 # -------------------- 【頁面與全站 CSS 配置】 --------------------
-st.set_page_config(page_title="HURDEX - 跨欄運動技術與防護分析系統", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="HURDEX", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
@@ -1396,7 +1396,7 @@ page = st.sidebar.radio("請選擇功能模組：", nav_options)
 
 # ==================== 【頁面 1：系統首頁 Home】 ====================
 if page == "系統首頁 Home":
-    st.title("🏃 HURDEX 跨欄運動技術與防護分析系統")
+    st.title("HURDEX")
     st.markdown("---")
 
     if st.session_state["user_info"] is None:
