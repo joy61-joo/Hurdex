@@ -23,6 +23,7 @@ from ai_analytics import (
     analyze_longitudinal_hurdle_comparison,
     generate_pre_comp_integrated_report,
     generate_trainer_review_copilot,
+    evaluate_daily_meals,
 )
 
 def get_base64_video(uploaded_file):
@@ -4978,64 +4979,7 @@ elif page == "體重監控 Weight Monitoring":
             target_meal_user = u_meal["username"]
 
         def _run_meal_ai_assessment(meal_date_str, cur_weight, goal_mode, training_load, b_txt, l_txt, d_txt, s_txt):
-            import os
-            api_key = os.environ.get("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY", "")
-            if not api_key:
-                raise RuntimeError("尚未設定 GEMINI_API_KEY，請先於系統環境變數或 Streamlit Secrets 中設定。")
-
-            prompt = f"""
-你是一位專精於田徑跨欄與爆發力項目的運動營養師。請根據以下運動員今日的三餐與補給內容，估算每餐與全日總熱量及三大營養素（蛋白質、碳水化合物、脂肪），並提供具體實用的運動營養調整建議。
-
-【運動員基本狀態】
-- 日期：{meal_date_str}
-- 目前體重：{cur_weight} kg
-- 體重管理目標：{goal_mode}
-- 今日訓練負荷：{training_load}
-
-【今日飲食內容】
-- 早餐：{b_txt if b_txt.strip() else "未進食 / 未填寫"}
-- 午餐：{l_txt if l_txt.strip() else "未進食 / 未填寫"}
-- 晚餐：{d_txt if d_txt.strip() else "未進食 / 未填寫"}
-- 點心 / 訓練前後補給：{s_txt if s_txt.strip() else "無"}
-
-請嚴格只回傳合法的 JSON 格式（不要包含 ```json 標記或多餘文字），結構如下：
-{{
-  "total_calories": 2250,
-  "total_protein_g": 135,
-  "total_carbs_g": 280,
-  "total_fat_g": 62,
-  "meals_breakdown": [
-    {{"meal": "早餐", "items_summary": "簡述食物", "calories": 550, "protein_g": 30, "carbs_g": 65, "fat_g": 18}},
-    {{"meal": "午餐", "items_summary": "簡述食物", "calories": 750, "protein_g": 45, "carbs_g": 95, "fat_g": 20}},
-    {{"meal": "晚餐", "items_summary": "簡述食物", "calories": 700, "protein_g": 40, "carbs_g": 85, "fat_g": 18}},
-    {{"meal": "點心/補給", "items_summary": "簡述食物", "calories": 250, "protein_g": 20, "carbs_g": 35, "fat_g": 6}}
-  ],
-  "target_comparison": "說明今日熱量與蛋白質（每公斤體重攝取量）是否符合該訓練負荷與體重目標",
-  "nutrition_advice": "給予2至3點具體可執行的下一餐或明日飲食微調建議（繁體中文）"
-}}
-"""
-            raw_text = ""
-            try:
-                from google import genai
-                client = genai.Client(api_key=api_key)
-                resp = client.models.generate_content(
-                    model="gemini-3.8-flash",
-                    contents=prompt
-                )
-                raw_text = resp.text or ""
-            except ImportError:
-                import google.generativeai as genai_legacy
-                genai_legacy.configure(api_key=api_key)
-                model = genai_legacy.GenerativeModel("gemini-3.8-flash")
-                resp = model.generate_content(prompt)
-                raw_text = resp.text or ""
-
-            cleaned = raw_text.strip()
-            if cleaned.startswith("```"):
-                cleaned = cleaned.split("\n", 1)[-1]
-            if cleaned.endswith("```"):
-                cleaned = cleaned.rsplit("```", 1)[0]
-            return json.loads(cleaned.strip())
+            return evaluate_daily_meals(meal_date_str, cur_weight, goal_mode, training_load, b_txt, l_txt, d_txt, s_txt)
 
         if target_meal_user:
             tab_meal_ai, tab_meal_hist = st.tabs([
