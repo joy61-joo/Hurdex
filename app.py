@@ -2298,9 +2298,9 @@ elif page == "角度分析 Angle Analysis":
             "欄間秒數及速度計算"
         ])
 
-    with tab_play:
+        with tab_play:
             st.video(bytes_single)
-    with tab_measure:
+        with tab_measure:
             measure_html_template = """<!DOCTYPE html>
             <html>
             <head>
@@ -2849,8 +2849,7 @@ elif page == "角度分析 Angle Analysis":
                                 "user_notes": rec_note_angle.strip(),
                                 "saved_at": str(datetime.datetime.now())
                             }, folder_name=sel_folder_angle)
-st.success("儲存成功！已連同各關節名稱與標註畫面存入歷史分析紀錄。")
-
+                            st.success("儲存成功！已連同各關節名稱與標註畫面存入歷史分析紀錄。")
         with tab_hurdle_timer:
             timer_html_template = """<!DOCTYPE html>
             <html>
