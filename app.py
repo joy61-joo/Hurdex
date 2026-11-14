@@ -1459,7 +1459,56 @@ nav_options = [
 ]
 
 page = st.sidebar.radio("請選擇功能模組：", nav_options)
+# --- 側邊欄滑鼠懸停顯示小頁面預覽 ---
+subpage_hints = {
+    "系統首頁 Home": "• 團隊公告與最新動態\n• 個人／全隊數據總覽",
+    "運動防護 Injury Care": "• AI 疲勞與傷病風險預測\n• 防護員評估與復健追蹤",
+    "比賽行事曆 Competition Calendar": "• 賽事日程與倒數管理\n• AI 賽前整合評估報告",
+    "角度分析 Angle Analysis": "• 關鍵影格關節角度標記\n• 欄間秒數及速度計算",
+    "雙影同步 Dual Video Sync": "• 雙影片並排同步播放\n• 逐幀動作差異對比",
+    "跨期數據對比 Longitudinal Comparison": "• 前後期技術指標變化\n• AI 縱向進步趨勢診斷",
+    "課表紀錄 Training Plan": "• 週期訓練課表檢視\n• 每日訓練內容與負荷登錄",
+    "體重監控 Weight Monitoring": "• 每日體重變化曲線\n• AI 三餐熱量與營養評估\n• 歷次飲食熱量紀錄",
+    "歷史分析紀錄 History Records": "• 團隊／個人歷史資料庫\n• 資料夾分類與分享權限管理",
+}
 
+hover_css_rules = [
+    """
+    section[data-testid="stSidebar"] div[role="radiogroup"] > label {
+        flex-wrap: wrap !important;
+        padding: 4px 6px;
+        border-radius: 6px;
+        transition: background-color 0.15s ease;
+    }
+    section[data-testid="stSidebar"] div[role="radiogroup"] > label:hover {
+        background-color: rgba(37, 99, 235, 0.08);
+    }
+    section[data-testid="stSidebar"] div[role="radiogroup"] > label:hover::after {
+        display: block;
+        flex-basis: 100%;
+        margin-top: 4px;
+        margin-left: 22px;
+        padding: 6px 10px;
+        background-color: #1e293b;
+        color: #f8fafc;
+        font-size: 12px;
+        line-height: 1.5;
+        border-radius: 6px;
+        white-space: pre-line;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    }
+    """
+]
+
+for idx, opt_name in enumerate(nav_options, start=1):
+    hint_text = subpage_hints.get(opt_name, "")
+    if hint_text:
+        safe_hint = hint_text.replace("\n", "\\A ")
+        hover_css_rules.append(
+            f'section[data-testid="stSidebar"] div[role="radiogroup"] > label:nth-child({idx}):hover::after {{ content: "{safe_hint}"; }}'
+        )
+
+st.markdown(f"<style>{''.join(hover_css_rules)}</style>", unsafe_allow_html=True)
 # ==================== 【頁面 1：系統首頁 Home】 ====================
 if page == "系統首頁 Home":
     st.title("HURDEX")
