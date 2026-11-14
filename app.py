@@ -2924,7 +2924,7 @@ elif page == "角度分析 Angle Analysis":
                             final_metrics = dict(p_data)
                             if edited_angles:
                                 final_metrics["angles"] = edited_angles
-save_record(u["username"], u["team_code"], "關鍵影格角度量測 Keyframe Angle Measurement", rec_title_angle, {
+                            save_record(u["username"], u["team_code"], "關鍵影格角度量測 Keyframe Angle Measurement", rec_title_angle, {
                                 "video_filename": uploaded_file.name,
                                 "image_b64": captured_img,
                                 "angle_metrics": final_metrics,
